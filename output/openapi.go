@@ -521,6 +521,14 @@ func (o *OpenAPIFileContext) GetOpHappyResponseType(pkg string, op *openapi3.Ope
 	return opResponse.GoType
 }
 
+func (o *OpenAPIFileContext) GetOpXHandlerFunc(op *openapi3.Operation) bool {
+	xHandlerFunc, ok := op.Extensions["x-handler-func"].(bool)
+	if !ok {
+		return false
+	}
+	return xHandlerFunc
+}
+
 /* Auth Focused Helpers */
 
 func (o *OpenAPIFileContext) OpSecurity(op *openapi3.Operation) openapi3.SecurityRequirements {

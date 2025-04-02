@@ -151,8 +151,12 @@ type Operations interface {
 {{- range $name, $path := .API.Paths.Map }}
     {{- range $verb, $op := $path.Operations }}
         {{- $opResponse := $.GetOpHappyResponse $package $op }}
-	{{ pascal $op.OperationID}}(ctx context.Context,
-        {{- template "methodSignature" ($.WithParams "op" $op "package" $package "path" $path) }}
+	{{ pascal $op.OperationID}}
+		{{- if $.GetOpXHandlerFunc $op -}}
+			(w http.ResponseWriter, r *http.Request)
+		{{- else -}}
+			(ctx context.Context, {{- template "methodSignature" ($.WithParams "op" $op "package" $package "path" $path) }}
+		{{- end }}
     {{- end }}
 {{- end }}
 }
@@ -245,10 +249,12 @@ func RegisterHTTP(ops Operations, r Mux
 {{- goDoc $op.Summary }}
 {{- goDoc $op.Description }}
 func (h OpenAPIHandlers) {{ pascal $op.OperationID}}(w http.ResponseWriter, r *http.Request) {
+	logctx.AddStrToContext(r.Context(), "op", "{{$op.OperationID}}")
+	{{- if $.GetOpXHandlerFunc $op}}
+    h.ops.{{ pascal $op.OperationID}}(w, r)
+	{{else}}
 	var err error
         {{- $securityList := $.OpSecurity $op }}
-
-	logctx.AddStrToContext(r.Context(), "op", "{{$op.OperationID}}")
 
         {{- if $.IsSimpleAuth $op }}
             {{- $lastAuth := "" }}
@@ -378,6 +384,7 @@ func (h OpenAPIHandlers) {{ pascal $op.OperationID}}(w http.ResponseWriter, r *h
 
 	w.WriteHeader({{$key}})
         {{- end }}
+	{{- end -}}
 }
 
     {{- end }}
