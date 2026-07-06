@@ -656,6 +656,133 @@ func (o *OpenAPIFileContext) OpSecurity(op *openapi3.Operation) openapi3.Securit
 	return o.API.Security
 }
 
+// OpSecuritySchemes returns the distinct security scheme names referenced by the operation
+// across all of its security requirement groups, sorted for deterministic output.
+func (o *OpenAPIFileContext) OpSecuritySchemes(op *openapi3.Operation) []string {
+	seen := map[string]bool{}
+
+	for _, group := range o.OpSecurity(op) {
+		for key := range group {
+			seen[key] = true
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
+// SecurityGroupSchemes returns the scheme names of a single security requirement group (the
+// schemes that must ALL be satisfied together), sorted for deterministic output.
+func (o *OpenAPIFileContext) SecurityGroupSchemes(group openapi3.SecurityRequirement) []string {
+	out := make([]string, 0, len(group))
+	for k := range group {
+		out = append(out, k)
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
+// OpSecurityGroups returns the operation's security requirement groups as sorted scheme-name
+// slices (AND within a group, OR across groups), with duplicate groups removed so the generated
+// validation does not repeat identical conditions.  An empty slice element represents an empty
+// requirement (anonymous access permitted).
+func (o *OpenAPIFileContext) OpSecurityGroups(op *openapi3.Operation) [][]string {
+	var out [][]string
+
+	seen := map[string]bool{}
+
+	for _, group := range o.OpSecurity(op) {
+		schemes := o.SecurityGroupSchemes(group)
+
+		key := strings.Join(schemes, "\x00")
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		out = append(out, schemes)
+	}
+
+	return out
+}
+
+// SecuritySchemeKind classifies a security scheme for client generation.  It returns one of:
+//   - "basic", "bearer", "apiKey" (the default, which also covers custom x-raw-auth schemes);
+//   - "clientCredentials" for an OAuth2 scheme that declares a client-credentials flow, which the
+//     client drives entirely from a clientcredentials.Config (no per-request token);
+//   - "authCode" for any other OAuth2 flow or an OpenID Connect scheme, which the client drives
+//     from an oauth2.Config plus a per-request *oauth2.Token.
+func (o *OpenAPIFileContext) SecuritySchemeKind(name string) string {
+	if o.API.Components == nil {
+		return ""
+	}
+
+	s := o.API.Components.SecuritySchemes[name]
+	if s == nil || s.Value == nil {
+		return ""
+	}
+
+	switch s.Value.Type {
+	case "http":
+		if s.Value.Scheme == "basic" {
+			return "basic"
+		}
+
+		return "bearer"
+	case "oauth2":
+		if s.Value.Flows != nil && s.Value.Flows.ClientCredentials != nil {
+			return "clientCredentials"
+		}
+
+		return "authCode"
+	case "openIdConnect":
+		return "authCode"
+	default:
+		return "apiKey"
+	}
+}
+
+// HasOAuth2 reports whether any security scheme uses OAuth2 or OpenID Connect.  Both drive the
+// request through an oauth2-wrapped HTTP client, so the "golang.org/x/oauth2" package is needed.
+func (o *OpenAPIFileContext) HasOAuth2() bool {
+	if o.API.Components == nil {
+		return false
+	}
+
+	for _, s := range o.API.Components.SecuritySchemes {
+		if s != nil && s.Value != nil && (s.Value.Type == "oauth2" || s.Value.Type == "openIdConnect") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// HasClientCredentials reports whether any security scheme is an OAuth2 client-credentials flow,
+// which requires the "golang.org/x/oauth2/clientcredentials" package.
+func (o *OpenAPIFileContext) HasClientCredentials() bool {
+	if o.API.Components == nil {
+		return false
+	}
+
+	for name := range o.API.Components.SecuritySchemes {
+		if o.SecuritySchemeKind(name) == "clientCredentials" {
+			return true
+		}
+	}
+
+	return false
+}
+
 func hasAuthorization(security openapi3.SecurityRequirements) bool {
 	for _, ss := range security {
 		for _, scopes := range ss {

@@ -80,6 +80,15 @@ components:
             write:pets: modify pets in your account
             read:pets: read your pets
 
+    Oauth2ClientCredentialsExample:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://example.com/api/oauth/token
+          scopes:
+            write:pets: modify pets in your account
+            read:pets: read your pets
+
   schemas:
     User:
       type: object
@@ -244,6 +253,18 @@ paths:
       responses:
         '200':
           description: Detailed user profile
+
+  # OAuth Client Credentials
+  /overview:
+    get:
+      operationId: overview
+      summary: System overview
+      description: Requires OAuth client credentials
+      security:
+        - Oauth2ClientCredentialsExample: []
+      responses:
+        '200':
+          description: System overview data
 
   # API key variations
   /data/query:

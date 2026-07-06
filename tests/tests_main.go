@@ -34,7 +34,7 @@ func main() {
 	example.RegisterHTTP(ops, http.NewServeMux(), tokenAuth, tokenAuth, tokenAuth, tokenAuth, rawAuth, authorize)
 
 	var authOps auth.Operations = &auth.Service{}
-	auth.RegisterHTTP(authOps, http.NewServeMux(), tokenAuth, tokenAuth, tokenAuth, basicAuth, tokenAuth, rawAuth, rawAuth, rawAuth, authorize)
+	auth.RegisterHTTP(authOps, http.NewServeMux(), tokenAuth, tokenAuth, tokenAuth, basicAuth, tokenAuth, rawAuth, rawAuth, rawAuth, rawAuth, authorize)
 
 	os.Exit(0)
 }
