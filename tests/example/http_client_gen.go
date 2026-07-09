@@ -122,7 +122,6 @@ func (c *Client) GetAuthComplex(ctx context.Context, headerAuthToken string, jwt
 	if headerAuthToken == "" {
 		headerAuthToken = c.headerAuthToken
 	}
-
 	if jwtToken == "" {
 		jwtToken = c.jwtToken
 	}
@@ -137,11 +136,9 @@ func (c *Client) GetAuthComplex(ctx context.Context, headerAuthToken string, jwt
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
-
 	if jwtToken != "" {
 		q := req.URL.Query()
 		q.Set("jwt", jwtToken)
@@ -179,7 +176,6 @@ func (c *Client) GetAuthSimple(ctx context.Context, headerAuthToken string) erro
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
@@ -211,7 +207,6 @@ func (c *Client) GetAuthSimpleMaybe(ctx context.Context, headerAuthToken string)
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
@@ -247,7 +242,6 @@ func (c *Client) GetAuthSimple2(ctx context.Context, headerAuthToken string) err
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
@@ -279,7 +273,6 @@ func (c *Client) GetAuthSimple2Maybe(ctx context.Context, headerAuthToken string
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
@@ -304,7 +297,6 @@ func (c *Client) GetAuthComplexMaybe(ctx context.Context, headerAuthToken string
 	if headerAuthToken == "" {
 		headerAuthToken = c.headerAuthToken
 	}
-
 	if jwtToken == "" {
 		jwtToken = c.jwtToken
 	}
@@ -315,11 +307,9 @@ func (c *Client) GetAuthComplexMaybe(ctx context.Context, headerAuthToken string
 	if err != nil {
 		return err
 	}
-
 	if headerAuthToken != "" {
 		req.Header.Set("Authorization", headerAuthToken)
 	}
-
 	if jwtToken != "" {
 		q := req.URL.Query()
 		q.Set("jwt", jwtToken)
@@ -346,11 +336,9 @@ func (c *Client) GetComplexSecurity(ctx context.Context, bearerToken string, cus
 	if bearerToken == "" {
 		bearerToken = c.bearerToken
 	}
-
 	if customHeaderAuthToken == "" {
 		customHeaderAuthToken = c.customHeaderAuthToken
 	}
-
 	if rawToken == "" {
 		rawToken = c.rawToken
 	}
@@ -365,15 +353,12 @@ func (c *Client) GetComplexSecurity(ctx context.Context, bearerToken string, cus
 	if err != nil {
 		return nil, err
 	}
-
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
-
 	if customHeaderAuthToken != "" {
 		req.Header.Set("X-CUSTOM-HEADER", customHeaderAuthToken)
 	}
-
 	if rawToken != "" {
 		req.Header.Set("Authorization", rawToken)
 	}

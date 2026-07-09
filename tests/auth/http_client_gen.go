@@ -120,7 +120,6 @@ func (c *Client) ListAdminUsers(ctx context.Context, apiKeyHeaderToken string, b
 	if apiKeyHeaderToken == "" {
 		apiKeyHeaderToken = c.apiKeyHeaderToken
 	}
-
 	if bearerAuthToken == "" {
 		bearerAuthToken = c.bearerAuthToken
 	}
@@ -135,11 +134,9 @@ func (c *Client) ListAdminUsers(ctx context.Context, apiKeyHeaderToken string, b
 	if err != nil {
 		return nil, err
 	}
-
 	if apiKeyHeaderToken != "" {
 		req.Header.Set("X-API-Key", apiKeyHeaderToken)
 	}
-
 	if bearerAuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
 	}
@@ -171,15 +168,12 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken stri
 	if apiKeyCookieToken == "" {
 		apiKeyCookieToken = c.apiKeyCookieToken
 	}
-
 	if apiKeyHeaderToken == "" {
 		apiKeyHeaderToken = c.apiKeyHeaderToken
 	}
-
 	if apiKeyQueryToken == "" {
 		apiKeyQueryToken = c.apiKeyQueryToken
 	}
-
 	if rawToken == "" {
 		rawToken = c.rawToken
 	}
@@ -202,21 +196,17 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken stri
 	if err != nil {
 		return err
 	}
-
 	if apiKeyCookieToken != "" {
 		req.AddCookie(&http.Cookie{Name: "cookie_name", Value: apiKeyCookieToken})
 	}
-
 	if apiKeyHeaderToken != "" {
 		req.Header.Set("X-API-Key", apiKeyHeaderToken)
 	}
-
 	if apiKeyQueryToken != "" {
 		q := req.URL.Query()
 		q.Set("query_key_name", apiKeyQueryToken)
 		req.URL.RawQuery = q.Encode()
 	}
-
 	if rawToken != "" {
 		req.Header.Set("Authorization", rawToken)
 	}
@@ -255,7 +245,6 @@ func (c *Client) ListDocuments(ctx context.Context, basicAuthUsername string, ba
 	if err != nil {
 		return err
 	}
-
 	if basicAuthUsername != "" {
 		req.SetBasicAuth(basicAuthUsername, basicAuthPassword)
 	}
@@ -282,7 +271,6 @@ func (c *Client) CreateDocument(ctx context.Context, apiKeyHeaderToken string, b
 	if apiKeyHeaderToken == "" {
 		apiKeyHeaderToken = c.apiKeyHeaderToken
 	}
-
 	if bearerAuthToken == "" {
 		bearerAuthToken = c.bearerAuthToken
 	}
@@ -297,11 +285,9 @@ func (c *Client) CreateDocument(ctx context.Context, apiKeyHeaderToken string, b
 	if err != nil {
 		return err
 	}
-
 	if apiKeyHeaderToken != "" {
 		req.Header.Set("X-API-Key", apiKeyHeaderToken)
 	}
-
 	if bearerAuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
 	}
@@ -336,7 +322,6 @@ func (c *Client) Overview(ctx context.Context) error {
 		return err
 	}
 	doer := c.doer
-
 	if c.oauth2ClientCredentialsExampleConfig != nil {
 		doer = c.oauth2ClientCredentialsExampleConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer))
 	}
@@ -371,7 +356,6 @@ func (c *Client) GetDetailedProfile(ctx context.Context, openIdconnectToken *oau
 		return err
 	}
 	doer := c.doer
-
 	if openIdconnectToken != nil {
 		doer = c.openIdconnectConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), openIdconnectToken)
 	}
@@ -402,16 +386,13 @@ func (c *Client) GetProtectedResource(ctx context.Context, apiKeyCookieToken str
 	if apiKeyCookieToken == "" {
 		apiKeyCookieToken = c.apiKeyCookieToken
 	}
-
 	if apiKeyHeaderToken == "" {
 		apiKeyHeaderToken = c.apiKeyHeaderToken
 	}
-
 	if basicAuthUsername == "" {
 		basicAuthUsername = c.basicAuthUsername
 		basicAuthPassword = c.basicAuthPassword
 	}
-
 	if bearerAuthToken == "" {
 		bearerAuthToken = c.bearerAuthToken
 	}
@@ -426,19 +407,15 @@ func (c *Client) GetProtectedResource(ctx context.Context, apiKeyCookieToken str
 	if err != nil {
 		return err
 	}
-
 	if apiKeyCookieToken != "" {
 		req.AddCookie(&http.Cookie{Name: "cookie_name", Value: apiKeyCookieToken})
 	}
-
 	if apiKeyHeaderToken != "" {
 		req.Header.Set("X-API-Key", apiKeyHeaderToken)
 	}
-
 	if basicAuthUsername != "" {
 		req.SetBasicAuth(basicAuthUsername, basicAuthPassword)
 	}
-
 	if bearerAuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
 	}
@@ -496,7 +473,6 @@ func (c *Client) GetCurrentUser(ctx context.Context, apiKeyHeaderToken string, b
 	if apiKeyHeaderToken == "" {
 		apiKeyHeaderToken = c.apiKeyHeaderToken
 	}
-
 	if bearerAuthToken == "" {
 		bearerAuthToken = c.bearerAuthToken
 	}
@@ -511,16 +487,13 @@ func (c *Client) GetCurrentUser(ctx context.Context, apiKeyHeaderToken string, b
 	if err != nil {
 		return nil, err
 	}
-
 	if apiKeyHeaderToken != "" {
 		req.Header.Set("X-API-Key", apiKeyHeaderToken)
 	}
-
 	if bearerAuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
 	}
 	doer := c.doer
-
 	if oauth2ExampleToken != nil {
 		doer = c.oauth2ExampleConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), oauth2ExampleToken)
 	}
@@ -563,7 +536,6 @@ func (c *Client) GetUserProfile(ctx context.Context, bearerAuthToken string) (*U
 	if err != nil {
 		return nil, err
 	}
-
 	if bearerAuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
 	}

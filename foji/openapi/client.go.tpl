@@ -16,23 +16,112 @@
     {{- end -}}
 {{- end -}}
 
-{{- define "authProvided" -}}
+{{- define "authScheme" -}}
     {{- $scheme := .RuntimeParams.scheme -}}
-    {{- $kind := $.SecuritySchemeKind $scheme -}}
-    {{- if eq $kind "basic" -}}{{ camel $scheme }}Username != ""
-    {{- else if eq $kind "authCode" -}}{{ camel $scheme }}Token != nil
-    {{- else if eq $kind "clientCredentials" -}}c.{{ camel $scheme }}Config != nil
-    {{- else -}}{{ camel $scheme }}Token != ""
-    {{- end -}}
-{{- end -}}
+    {{- $mode := .RuntimeParams.mode -}}
+    {{- $s := index $.API.Components.SecuritySchemes $scheme -}}
+    {{- $c := camel $scheme -}}
+    {{- $kind := "apiKey" -}}
+    {{- if eq $s.Value.Type "http" -}}
+        {{- if eq $s.Value.Scheme "basic" -}}{{ $kind = "basic" }}{{- else -}}{{ $kind = "bearer" }}{{- end -}}
+    {{- else if eq $s.Value.Type "oauth2" -}}
+        {{- if and (isNotNil $s.Value.Flows) (isNotNil $s.Value.Flows.ClientCredentials) -}}{{ $kind = "clientCredentials" }}{{- else -}}{{ $kind = "authCode" }}{{- end -}}
+    {{- else if eq $s.Value.Type "openIdConnect" -}}{{ $kind = "authCode" }}{{- end -}}
 
-{{- define "authParams" -}}
-    {{- $scheme := .RuntimeParams.scheme -}}
-    {{- $kind := $.SecuritySchemeKind $scheme -}}
-    {{- if eq $kind "basic" }} {{ camel $scheme }}Username string, {{ camel $scheme }}Password string,
-    {{- else if eq $kind "authCode" }} {{ camel $scheme }}Token *oauth2.Token,
-    {{- else if eq $kind "clientCredentials" }}
-    {{- else }} {{ camel $scheme }}Token string,
+    {{- if eq $mode "params" -}}
+        {{- if eq $kind "basic" }} {{ $c }}Username string, {{ $c }}Password string,
+        {{- else if eq $kind "authCode" }} {{ $c }}Token *oauth2.Token,
+        {{- else if eq $kind "clientCredentials" }}
+        {{- else }} {{ $c }}Token string,
+        {{- end -}}
+    {{- else if eq $mode "provided" -}}
+        {{- if eq $kind "basic" -}}{{ $c }}Username != ""
+        {{- else if eq $kind "authCode" -}}{{ $c }}Token != nil
+        {{- else if eq $kind "clientCredentials" -}}c.{{ $c }}Config != nil
+        {{- else -}}{{ $c }}Token != ""
+        {{- end -}}
+    {{- else if eq $mode "field" -}}
+        {{- if eq $kind "basic" }}
+	{{ $c }}Username string
+	{{ $c }}Password string
+        {{- else if eq $kind "authCode" }}
+	{{ $c }}Config oauth2.Config
+        {{- else if eq $kind "clientCredentials" }}
+	{{ $c }}Config *clientcredentials.Config
+        {{- else }}
+	{{ $c }}Token string
+        {{- end }}
+    {{- else if eq $mode "option" -}}
+        {{- if eq $kind "basic" }}
+func With{{ pascal $scheme }}Credentials(username, password string) ClientOption {
+	return func(c *Client) {
+		c.{{ $c }}Username = username
+		c.{{ $c }}Password = password
+	}
+}
+        {{- else if eq $kind "authCode" }}
+func With{{ pascal $scheme }}Config(config oauth2.Config) ClientOption {
+	return func(c *Client) {
+		c.{{ $c }}Config = config
+	}
+}
+        {{- else if eq $kind "clientCredentials" }}
+func With{{ pascal $scheme }}Config(config clientcredentials.Config) ClientOption {
+	return func(c *Client) {
+		c.{{ $c }}Config = &config
+	}
+}
+        {{- else }}
+func With{{ pascal $scheme }}Token(token string) ClientOption {
+	return func(c *Client) {
+		c.{{ $c }}Token = token
+	}
+}
+        {{- end }}
+    {{- else if eq $mode "resolve" -}}
+        {{- if eq $kind "basic" }}
+	if {{ $c }}Username == "" {
+		{{ $c }}Username = c.{{ $c }}Username
+		{{ $c }}Password = c.{{ $c }}Password
+	}
+        {{- else if or (eq $kind "authCode") (eq $kind "clientCredentials") }}
+        {{- else }}
+	if {{ $c }}Token == "" {
+		{{ $c }}Token = c.{{ $c }}Token
+	}
+        {{- end }}
+    {{- else if eq $mode "inject" -}}
+        {{- if eq $kind "bearer" }}
+	if {{ $c }}Token != "" {
+		req.Header.Set("Authorization", "Bearer "+{{ $c }}Token)
+	}
+        {{- else if eq $kind "basic" }}
+	if {{ $c }}Username != "" {
+		req.SetBasicAuth({{ $c }}Username, {{ $c }}Password)
+	}
+        {{- else if eq $kind "apiKey" }}
+	if {{ $c }}Token != "" {
+            {{- if eq $s.Value.In "header" }}
+		req.Header.Set("{{ $s.Value.Name }}", {{ $c }}Token)
+            {{- else if eq $s.Value.In "query" }}
+		q := req.URL.Query()
+		q.Set("{{ $s.Value.Name }}", {{ $c }}Token)
+		req.URL.RawQuery = q.Encode()
+            {{- else if eq $s.Value.In "cookie" }}
+		req.AddCookie(&http.Cookie{Name: "{{ $s.Value.Name }}", Value: {{ $c }}Token})
+            {{- end }}
+	}
+        {{- end }}
+    {{- else if eq $mode "client" -}}
+        {{- if eq $kind "authCode" }}
+	if {{ $c }}Token != nil {
+		doer = c.{{ $c }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), {{ $c }}Token)
+	}
+        {{- else if eq $kind "clientCredentials" }}
+	if c.{{ $c }}Config != nil {
+		doer = c.{{ $c }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer))
+	}
+        {{- end }}
     {{- end -}}
 {{- end -}}
 
@@ -41,7 +130,7 @@
     {{- $op := .RuntimeParams.op -}}
     {{- $package := .RuntimeParams.package -}}
     {{- $body := .GetRequestBody $op -}}
-    {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authParams" ($.WithParams "scheme" $scheme) }}{{- end }}
+    {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "params") }}{{- end }}
     {{- range $param := $.OpParams $path $op -}}
         {{- $name := print $op.OperationID " " $param.Value.Name -}}
         {{- if notEmpty $param.Ref }}{{ $name = trimPrefix "#/components/parameters/" $param.Ref }}{{ end -}}
@@ -71,17 +160,11 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
-	"time"
-{{- if .HasOAuth2 }}
 
 	"golang.org/x/oauth2"
-{{- end }}
-{{- if .HasClientCredentials }}
 	"golang.org/x/oauth2/clientcredentials"
-{{- end }}
 {{- .CheckAllTypes $package ($.Params.GetWithDefault "Auth" "") -}}
 {{- range .GoImports }}
 	"{{ . }}"
@@ -97,19 +180,7 @@ type ClientOption func(*Client)
 type Client struct {
 	baseURL string
 	doer    Doer
-{{- range $security, $value := .API.Components.SecuritySchemes }}
-    {{- $kind := $.SecuritySchemeKind $security }}
-    {{- if eq $kind "basic" }}
-	{{ camel $security }}Username string
-	{{ camel $security }}Password string
-    {{- else if eq $kind "authCode" }}
-	{{ camel $security }}Config oauth2.Config
-    {{- else if eq $kind "clientCredentials" }}
-	{{ camel $security }}Config *clientcredentials.Config
-    {{- else }}
-	{{ camel $security }}Token string
-    {{- end }}
-{{- end }}
+{{- range $security, $value := .API.Components.SecuritySchemes }}{{ template "authScheme" ($.WithParams "scheme" $security "mode" "field") }}{{- end }}
 }
 
 func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
@@ -123,37 +194,7 @@ func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
 }
 
 {{- range $security, $value := .API.Components.SecuritySchemes }}
-    {{- $kind := $.SecuritySchemeKind $security }}
-    {{- if eq $kind "basic" }}
-
-func With{{ pascal $security }}Credentials(username, password string) ClientOption {
-	return func(c *Client) {
-		c.{{ camel $security }}Username = username
-		c.{{ camel $security }}Password = password
-	}
-}
-    {{- else if eq $kind "authCode" }}
-
-func With{{ pascal $security }}Config(config oauth2.Config) ClientOption {
-	return func(c *Client) {
-		c.{{ camel $security }}Config = config
-	}
-}
-    {{- else if eq $kind "clientCredentials" }}
-
-func With{{ pascal $security }}Config(config clientcredentials.Config) ClientOption {
-	return func(c *Client) {
-		c.{{ camel $security }}Config = &config
-	}
-}
-    {{- else }}
-
-func With{{ pascal $security }}Token(token string) ClientOption {
-	return func(c *Client) {
-		c.{{ camel $security }}Token = token
-	}
-}
-    {{- end }}
+{{ template "authScheme" ($.WithParams "scheme" $security "mode" "option") }}
 {{- end }}
 
 {{- if .HasAuthentication }}
@@ -183,30 +224,14 @@ func (e *APIError) Error() string {
 {{- goDoc $op.Description }}
 func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
     {{- template "clientMethodSignature" ($.WithParams "op" $op "package" $package "path" $path) }} {
-        {{- range $scheme := $.OpSecuritySchemes $op }}
-            {{- $kind := $.SecuritySchemeKind $scheme }}
-            {{- if eq $kind "basic" }}
-
-	if {{ camel $scheme }}Username == "" {
-		{{ camel $scheme }}Username = c.{{ camel $scheme }}Username
-		{{ camel $scheme }}Password = c.{{ camel $scheme }}Password
-	}
-            {{- else if eq $kind "authCode" }}
-            {{- else if eq $kind "clientCredentials" }}
-            {{- else }}
-
-	if {{ camel $scheme }}Token == "" {
-		{{ camel $scheme }}Token = c.{{ camel $scheme }}Token
-	}
-            {{- end }}
-        {{- end }}
+        {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "resolve") }}{{- end }}
         {{- if $.HasAnyAuth $op }}
             {{- $groups := $.OpSecurityGroups $op }}
             {{- $optional := false }}
             {{- range $g := $groups }}{{ if eq (len $g) 0 }}{{ $optional = true }}{{ end }}{{ end }}
             {{- if not $optional }}
 
-	if !({{ range $i, $g := $groups }}{{ if $i }} || {{ end }}({{ range $j, $scheme := $g }}{{ if $j }} && {{ end }}{{ template "authProvided" ($.WithParams "scheme" $scheme) }}{{ end }}){{ end }}) {
+	if !({{ range $i, $g := $groups }}{{ if $i }} || {{ end }}({{ range $j, $scheme := $g }}{{ if $j }} && {{ end }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "provided") }}{{ end }}){{ end }}) {
 		return {{ $errRet }}ErrMissingAuthToken
 	}
             {{- end }}
@@ -381,53 +406,13 @@ func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
             {{- end }}
         {{- end }}
 
+        {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "inject") }}{{- end }}
+
         {{- $opHasOAuth := false }}
-        {{- range $scheme := $.OpSecuritySchemes $op }}{{ $k := $.SecuritySchemeKind $scheme }}{{ if or (eq $k "authCode") (eq $k "clientCredentials") }}{{ $opHasOAuth = true }}{{ end }}{{ end }}
-        {{- range $scheme := $.OpSecuritySchemes $op }}
-            {{- $s := index $.API.Components.SecuritySchemes $scheme }}
-            {{- $kind := $.SecuritySchemeKind $scheme }}
-            {{- if eq $kind "bearer" }}
-
-	if {{ camel $scheme }}Token != "" {
-		req.Header.Set("Authorization", "Bearer "+{{ camel $scheme }}Token)
-	}
-            {{- else if eq $kind "basic" }}
-
-	if {{ camel $scheme }}Username != "" {
-		req.SetBasicAuth({{ camel $scheme }}Username, {{ camel $scheme }}Password)
-	}
-            {{- else if eq $kind "apiKey" }}
-
-	if {{ camel $scheme }}Token != "" {
-                {{- if eq $s.Value.In "header" }}
-		req.Header.Set("{{ $s.Value.Name }}", {{ camel $scheme }}Token)
-                {{- else if eq $s.Value.In "query" }}
-		q := req.URL.Query()
-		q.Set("{{ $s.Value.Name }}", {{ camel $scheme }}Token)
-		req.URL.RawQuery = q.Encode()
-                {{- else if eq $s.Value.In "cookie" }}
-		req.AddCookie(&http.Cookie{Name: "{{ $s.Value.Name }}", Value: {{ camel $scheme }}Token})
-                {{- end }}
-	}
-            {{- end }}
-        {{- end }}
-
+        {{- range $scheme := $.OpSecuritySchemes $op }}{{ $s := index $.API.Components.SecuritySchemes $scheme }}{{ if or (eq $s.Value.Type "oauth2") (eq $s.Value.Type "openIdConnect") }}{{ $opHasOAuth = true }}{{ end }}{{ end }}
         {{- if $opHasOAuth }}
 	doer := c.doer
-            {{- range $scheme := $.OpSecuritySchemes $op }}
-                {{- $kind := $.SecuritySchemeKind $scheme }}
-                {{- if eq $kind "authCode" }}
-
-	if {{ camel $scheme }}Token != nil {
-		doer = c.{{ camel $scheme }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), {{ camel $scheme }}Token)
-	}
-                {{- else if eq $kind "clientCredentials" }}
-
-	if c.{{ camel $scheme }}Config != nil {
-		doer = c.{{ camel $scheme }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer))
-	}
-                {{- end }}
-            {{- end }}
+            {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "client") }}{{- end }}
 
 	resp, err := doer.Do(req)
         {{- else }}
