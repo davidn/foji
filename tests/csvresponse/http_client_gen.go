@@ -26,11 +26,13 @@ type Client struct {
 }
 
 func NewClient(baseURL string, httpClient *http.Client, headerAuthAuth ClientTokenAuthenticator) *Client {
-	return &Client{
+	c := &Client{
 		baseURL:        baseURL,
 		httpClient:     httpClient,
 		headerAuthAuth: httputil.HeaderClientAuth("Authorization", headerAuthAuth),
 	}
+
+	return c
 }
 
 // GetByteCsv

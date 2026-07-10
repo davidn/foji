@@ -25,20 +25,27 @@ type (
 	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*ExampleAuth]
 	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*ExampleAuth]
 	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
+	ClientSecurityGroup         = httputil.ClientSecurityGroup[*ExampleAuth]
+	ClientSecurityGroups        = httputil.ClientSecurityGroups[*ExampleAuth]
 )
 
 type Client struct {
-	baseURL              string
-	httpClient           *http.Client
-	bearerAuth           ClientAuthenticator
-	customHeaderAuthAuth ClientAuthenticator
-	headerAuthAuth       ClientAuthenticator
-	jwtAuth              ClientAuthenticator
-	rawAuth              ClientAuthenticator
+	baseURL                     string
+	httpClient                  *http.Client
+	bearerAuth                  ClientAuthenticator
+	customHeaderAuthAuth        ClientAuthenticator
+	headerAuthAuth              ClientAuthenticator
+	jwtAuth                     ClientAuthenticator
+	rawAuth                     ClientAuthenticator
+	getAuthComplexSecurity      ClientSecurityGroups
+	getAuthSimpleMaybeSecurity  ClientSecurityGroups
+	getAuthSimple2MaybeSecurity ClientSecurityGroups
+	getAuthComplexMaybeSecurity ClientSecurityGroups
+	getComplexSecuritySecurity  ClientSecurityGroups
 }
 
 func NewClient(baseURL string, httpClient *http.Client, bearerAuth ClientTokenAuthenticator, customHeaderAuthAuth ClientTokenAuthenticator, headerAuthAuth ClientTokenAuthenticator, jwtAuth ClientTokenAuthenticator, rawAuth ClientTokenAuthenticator) *Client {
-	return &Client{
+	c := &Client{
 		baseURL:              baseURL,
 		httpClient:           httpClient,
 		bearerAuth:           httputil.BearerClientAuth("Authorization", bearerAuth),
@@ -47,6 +54,37 @@ func NewClient(baseURL string, httpClient *http.Client, bearerAuth ClientTokenAu
 		jwtAuth:              httputil.QueryClientAuth("jwt", jwtAuth),
 		rawAuth:              httputil.HeaderClientAuth("Authorization", rawAuth),
 	}
+
+	c.getAuthComplexSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{c.jwtAuth},
+	}
+
+	c.getAuthSimpleMaybeSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{},
+	}
+
+	c.getAuthSimple2MaybeSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{},
+	}
+
+	c.getAuthComplexMaybeSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.headerAuthAuth},
+		ClientSecurityGroup{c.jwtAuth},
+		ClientSecurityGroup{},
+	}
+
+	c.getComplexSecuritySecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.rawAuth},
+		ClientSecurityGroup{c.bearerAuth},
+		ClientSecurityGroup{c.customHeaderAuthAuth},
+	}
+
+	return c
 }
 
 // GetExamples
@@ -90,11 +128,7 @@ func (c *Client) GetAuthComplex(ctx context.Context, user *ExampleAuth) error {
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.headerAuthAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.jwtAuth(req, httpClient, user)
+	httpClient, err = c.getAuthComplexSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -154,7 +188,7 @@ func (c *Client) GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) erro
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	httpClient, err = c.getAuthSimpleMaybeSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -214,7 +248,7 @@ func (c *Client) GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) err
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	httpClient, err = c.getAuthSimple2MaybeSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -244,11 +278,7 @@ func (c *Client) GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) err
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.headerAuthAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.jwtAuth(req, httpClient, user)
+	httpClient, err = c.getAuthComplexMaybeSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -278,15 +308,7 @@ func (c *Client) GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]T
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.bearerAuth(req, httpClient, user)
-	if err != nil {
-		return nil, err
-	}
-	httpClient, err = c.customHeaderAuthAuth(req, httpClient, user)
-	if err != nil {
-		return nil, err
-	}
-	httpClient, err = c.rawAuth(req, httpClient, user)
+	httpClient, err = c.getComplexSecuritySecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return nil, err
 	}

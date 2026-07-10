@@ -118,6 +118,11 @@ type (
 	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
 	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
 	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
+
+{{- if .HasComplexAuth }}
+	ClientSecurityGroup  = httputil.ClientSecurityGroup[*{{ $.CheckPackage $clientAuth $package }}]
+	ClientSecurityGroups = httputil.ClientSecurityGroups[*{{ $.CheckPackage $clientAuth $package }}]
+{{- end }}
 )
 
 {{ end -}}
@@ -128,15 +133,40 @@ type Client struct {
 {{- range $security, $value := .API.Components.SecuritySchemes }}
 	{{ camel $security }}Auth ClientAuthenticator
 {{- end }}
+{{- range $name, $path := .API.Paths.Map }}
+    {{- range $verb, $op := $path.Operations }}
+        {{- if not ($.IsSimpleAuth $op) }}
+	{{ camel $op.OperationID}}Security ClientSecurityGroups
+        {{- end}}
+    {{- end}}
+{{- end}}
 }
 
 func NewClient(baseURL string, httpClient *http.Client
 {{- range $security, $value := .API.Components.SecuritySchemes }}, {{ template "clientAuth" ($.WithParams "scheme" $security "mode" "param") }}{{- end }}) *Client {
-	return &Client{
+	c := &Client{
 		baseURL:    baseURL,
 		httpClient: httpClient,
 {{- range $security, $value := .API.Components.SecuritySchemes }}{{ template "clientAuth" ($.WithParams "scheme" $security "mode" "construct") }}{{- end }}
 	}
+{{- range $name, $path := .API.Paths.Map }}
+    {{- range $verb, $op := $path.Operations }}
+        {{- if not ($.IsSimpleAuth $op) }}
+
+	c.{{ camel $op.OperationID}}Security = ClientSecurityGroups{
+            {{- range $securityGroup := $.OpSecurity $op }}
+		ClientSecurityGroup{
+                {{- range $security, $scopes := $securityGroup -}}
+			c.{{ camel $security }}Auth,
+                {{- end -}}
+		},
+            {{- end }}
+	}
+        {{- end}}
+    {{- end}}
+{{- end}}
+
+	return c
 }
 
 {{- range $name, $path := .API.Paths.Map }}
@@ -322,7 +352,14 @@ func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
         {{- end }}
 
 	httpClient := c.httpClient
+        {{- if $.IsSimpleAuth $op }}
         {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "clientAuth" ($.WithParams "scheme" $scheme "mode" "apply" "errRet" $errRet) }}{{- end }}
+        {{- else }}
+	httpClient, err = c.{{ camel $op.OperationID}}Security.Auth(req, httpClient, user)
+	if err != nil {
+		return {{ $errRet }}err
+	}
+        {{- end }}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

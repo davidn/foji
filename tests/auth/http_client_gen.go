@@ -18,6 +18,8 @@ type (
 	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*example.ExampleAuth]
 	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*example.ExampleAuth]
 	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*example.ExampleAuth]
+	ClientSecurityGroup         = httputil.ClientSecurityGroup[*example.ExampleAuth]
+	ClientSecurityGroups        = httputil.ClientSecurityGroups[*example.ExampleAuth]
 )
 
 type Client struct {
@@ -32,10 +34,15 @@ type Client struct {
 	oauth2ExampleAuth                  ClientAuthenticator
 	openIdconnectAuth                  ClientAuthenticator
 	rawAuth                            ClientAuthenticator
+	listAdminUsersSecurity             ClientSecurityGroups
+	queryDataWithApiKeySecurity        ClientSecurityGroups
+	createDocumentSecurity             ClientSecurityGroups
+	getProtectedResourceSecurity       ClientSecurityGroups
+	getCurrentUserSecurity             ClientSecurityGroups
 }
 
 func NewClient(baseURL string, httpClient *http.Client, apiKeyCookieAuth ClientCookieAuthenticator, apiKeyHeaderAuth ClientTokenAuthenticator, apiKeyQueryAuth ClientTokenAuthenticator, basicAuthAuth ClientBasicAuthenticator, bearerAuthAuth ClientTokenAuthenticator, oauth2ClientCredentialsExampleAuth ClientWrappingAuthenticator, oauth2ExampleAuth ClientWrappingAuthenticator, openIdconnectAuth ClientWrappingAuthenticator, rawAuth ClientAuthenticator) *Client {
-	return &Client{
+	c := &Client{
 		baseURL:                            baseURL,
 		httpClient:                         httpClient,
 		apiKeyCookieAuth:                   httputil.CookieClientAuth(apiKeyCookieAuth),
@@ -48,6 +55,34 @@ func NewClient(baseURL string, httpClient *http.Client, apiKeyCookieAuth ClientC
 		openIdconnectAuth:                  httputil.WrapClientAuth(openIdconnectAuth),
 		rawAuth:                            rawAuth,
 	}
+
+	c.listAdminUsersSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.apiKeyHeaderAuth, c.bearerAuthAuth},
+	}
+
+	c.queryDataWithApiKeySecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.apiKeyHeaderAuth},
+		ClientSecurityGroup{c.apiKeyQueryAuth},
+		ClientSecurityGroup{c.apiKeyCookieAuth},
+		ClientSecurityGroup{c.rawAuth},
+	}
+
+	c.createDocumentSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.apiKeyHeaderAuth, c.bearerAuthAuth},
+	}
+
+	c.getProtectedResourceSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.apiKeyHeaderAuth, c.basicAuthAuth},
+		ClientSecurityGroup{c.apiKeyCookieAuth, c.bearerAuthAuth},
+	}
+
+	c.getCurrentUserSecurity = ClientSecurityGroups{
+		ClientSecurityGroup{c.apiKeyHeaderAuth},
+		ClientSecurityGroup{c.bearerAuthAuth},
+		ClientSecurityGroup{c.oauth2ExampleAuth},
+	}
+
+	return c
 }
 
 // ListAdminUsers
@@ -62,11 +97,7 @@ func (c *Client) ListAdminUsers(ctx context.Context, user *example.ExampleAuth) 
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
-	if err != nil {
-		return nil, err
-	}
-	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	httpClient, err = c.listAdminUsersSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return nil, err
 	}
@@ -111,19 +142,7 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, user *example.ExampleA
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.apiKeyCookieAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.apiKeyQueryAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.rawAuth(req, httpClient, user)
+	httpClient, err = c.queryDataWithApiKeySecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -187,11 +206,7 @@ func (c *Client) CreateDocument(ctx context.Context, user *example.ExampleAuth) 
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	httpClient, err = c.createDocumentSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -291,19 +306,7 @@ func (c *Client) GetProtectedResource(ctx context.Context, user *example.Example
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.apiKeyCookieAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.basicAuthAuth(req, httpClient, user)
-	if err != nil {
-		return err
-	}
-	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	httpClient, err = c.getProtectedResourceSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return err
 	}
@@ -368,15 +371,7 @@ func (c *Client) GetCurrentUser(ctx context.Context, user *example.ExampleAuth) 
 	}
 
 	httpClient := c.httpClient
-	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
-	if err != nil {
-		return nil, err
-	}
-	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
-	if err != nil {
-		return nil, err
-	}
-	httpClient, err = c.oauth2ExampleAuth(req, httpClient, user)
+	httpClient, err = c.getCurrentUserSecurity.Auth(req, httpClient, user)
 	if err != nil {
 		return nil, err
 	}
