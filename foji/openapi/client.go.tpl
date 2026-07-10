@@ -16,112 +16,51 @@
     {{- end -}}
 {{- end -}}
 
-{{- define "authScheme" -}}
+{{- /* clientAuth classifies a security scheme and emits the fragment for the requested mode:
+       param (NewClient argument), construct (Client field initializer) or apply (per-request call). */}}
+{{- define "clientAuth" -}}
     {{- $scheme := .RuntimeParams.scheme -}}
     {{- $mode := .RuntimeParams.mode -}}
     {{- $s := index $.API.Components.SecuritySchemes $scheme -}}
+    {{- $v := $s.Value -}}
     {{- $c := camel $scheme -}}
-    {{- $kind := "apiKey" -}}
-    {{- if eq $s.Value.Type "http" -}}
-        {{- if eq $s.Value.Scheme "basic" -}}{{ $kind = "basic" }}{{- else -}}{{ $kind = "bearer" }}{{- end -}}
-    {{- else if eq $s.Value.Type "oauth2" -}}
-        {{- if and (isNotNil $s.Value.Flows) (isNotNil $s.Value.Flows.ClientCredentials) -}}{{ $kind = "clientCredentials" }}{{- else -}}{{ $kind = "authCode" }}{{- end -}}
-    {{- else if eq $s.Value.Type "openIdConnect" -}}{{ $kind = "authCode" }}{{- end -}}
+    {{- $kind := "header" -}}
+    {{- if $.SecurityHasExtension $s "x-raw-client-auth" -}}{{ $kind = "raw" }}
+    {{- else if eq $v.Type "http" -}}
+        {{- if eq $v.Scheme "basic" -}}{{ $kind = "basic" }}{{- else -}}{{ $kind = "bearer" }}{{- end -}}
+    {{- else if or (eq $v.Type "oauth2") (eq $v.Type "openIdConnect") -}}{{ $kind = "wrap" }}
+    {{- else if eq $v.In "query" -}}{{ $kind = "query" }}
+    {{- else if eq $v.In "cookie" -}}{{ $kind = "cookie" }}
+    {{- else -}}{{ $kind = "header" }}{{- end -}}
 
-    {{- if eq $mode "params" -}}
-        {{- if eq $kind "basic" }} {{ $c }}Username string, {{ $c }}Password string,
-        {{- else if eq $kind "authCode" }} {{ $c }}Token *oauth2.Token,
-        {{- else if eq $kind "clientCredentials" }}
-        {{- else }} {{ $c }}Token string,
+    {{- if eq $mode "param" -}}
+        {{- if eq $kind "raw" -}}{{ $c }}Auth ClientAuthenticator
+        {{- else if eq $kind "basic" -}}{{ $c }}Auth ClientBasicAuthenticator
+        {{- else if eq $kind "cookie" -}}{{ $c }}Auth ClientCookieAuthenticator
+        {{- else if eq $kind "wrap" -}}{{ $c }}Auth ClientWrappingAuthenticator
+        {{- else -}}{{ $c }}Auth ClientTokenAuthenticator
         {{- end -}}
-    {{- else if eq $mode "provided" -}}
-        {{- if eq $kind "basic" -}}{{ $c }}Username != ""
-        {{- else if eq $kind "authCode" -}}{{ $c }}Token != nil
-        {{- else if eq $kind "clientCredentials" -}}c.{{ $c }}Config != nil
-        {{- else -}}{{ $c }}Token != ""
-        {{- end -}}
-    {{- else if eq $mode "field" -}}
-        {{- if eq $kind "basic" }}
-	{{ $c }}Username string
-	{{ $c }}Password string
-        {{- else if eq $kind "authCode" }}
-	{{ $c }}Config oauth2.Config
-        {{- else if eq $kind "clientCredentials" }}
-	{{ $c }}Config *clientcredentials.Config
-        {{- else }}
-	{{ $c }}Token string
-        {{- end }}
-    {{- else if eq $mode "option" -}}
-        {{- if eq $kind "basic" }}
-func With{{ pascal $scheme }}Credentials(username, password string) ClientOption {
-	return func(c *Client) {
-		c.{{ $c }}Username = username
-		c.{{ $c }}Password = password
-	}
-}
-        {{- else if eq $kind "authCode" }}
-func With{{ pascal $scheme }}Config(config oauth2.Config) ClientOption {
-	return func(c *Client) {
-		c.{{ $c }}Config = config
-	}
-}
-        {{- else if eq $kind "clientCredentials" }}
-func With{{ pascal $scheme }}Config(config clientcredentials.Config) ClientOption {
-	return func(c *Client) {
-		c.{{ $c }}Config = &config
-	}
-}
-        {{- else }}
-func With{{ pascal $scheme }}Token(token string) ClientOption {
-	return func(c *Client) {
-		c.{{ $c }}Token = token
-	}
-}
-        {{- end }}
-    {{- else if eq $mode "resolve" -}}
-        {{- if eq $kind "basic" }}
-	if {{ $c }}Username == "" {
-		{{ $c }}Username = c.{{ $c }}Username
-		{{ $c }}Password = c.{{ $c }}Password
-	}
-        {{- else if or (eq $kind "authCode") (eq $kind "clientCredentials") }}
-        {{- else }}
-	if {{ $c }}Token == "" {
-		{{ $c }}Token = c.{{ $c }}Token
-	}
-        {{- end }}
-    {{- else if eq $mode "inject" -}}
-        {{- if eq $kind "bearer" }}
-	if {{ $c }}Token != "" {
-		req.Header.Set("Authorization", "Bearer "+{{ $c }}Token)
-	}
+    {{- else if eq $mode "construct" }}
+        {{- if eq $kind "raw" }}
+		{{ $c }}Auth: {{ $c }}Auth,
+        {{- else if eq $kind "header" }}
+		{{ $c }}Auth: httputil.HeaderClientAuth("{{ $v.Name }}", {{ $c }}Auth),
+        {{- else if eq $kind "query" }}
+		{{ $c }}Auth: httputil.QueryClientAuth("{{ $v.Name }}", {{ $c }}Auth),
+        {{- else if eq $kind "bearer" }}
+		{{ $c }}Auth: httputil.BearerClientAuth("Authorization", {{ $c }}Auth),
         {{- else if eq $kind "basic" }}
-	if {{ $c }}Username != "" {
-		req.SetBasicAuth({{ $c }}Username, {{ $c }}Password)
+		{{ $c }}Auth: httputil.BasicClientAuth({{ $c }}Auth),
+        {{- else if eq $kind "cookie" }}
+		{{ $c }}Auth: httputil.CookieClientAuth({{ $c }}Auth),
+        {{- else if eq $kind "wrap" }}
+		{{ $c }}Auth: httputil.WrapClientAuth({{ $c }}Auth),
+        {{- end -}}
+    {{- else if eq $mode "apply" }}
+	httpClient, err = c.{{ $c }}Auth(req, httpClient, user)
+	if err != nil {
+		return {{ $.RuntimeParams.errRet }}err
 	}
-        {{- else if eq $kind "apiKey" }}
-	if {{ $c }}Token != "" {
-            {{- if eq $s.Value.In "header" }}
-		req.Header.Set("{{ $s.Value.Name }}", {{ $c }}Token)
-            {{- else if eq $s.Value.In "query" }}
-		q := req.URL.Query()
-		q.Set("{{ $s.Value.Name }}", {{ $c }}Token)
-		req.URL.RawQuery = q.Encode()
-            {{- else if eq $s.Value.In "cookie" }}
-		req.AddCookie(&http.Cookie{Name: "{{ $s.Value.Name }}", Value: {{ $c }}Token})
-            {{- end }}
-	}
-        {{- end }}
-    {{- else if eq $mode "client" -}}
-        {{- if eq $kind "authCode" }}
-	if {{ $c }}Token != nil {
-		doer = c.{{ $c }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), {{ $c }}Token)
-	}
-        {{- else if eq $kind "clientCredentials" }}
-	if c.{{ $c }}Config != nil {
-		doer = c.{{ $c }}Config.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer))
-	}
-        {{- end }}
     {{- end -}}
 {{- end -}}
 
@@ -130,7 +69,7 @@ func With{{ pascal $scheme }}Token(token string) ClientOption {
     {{- $op := .RuntimeParams.op -}}
     {{- $package := .RuntimeParams.package -}}
     {{- $body := .GetRequestBody $op -}}
-    {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "params") }}{{- end }}
+    {{- if $.OpSecuritySchemes $op }} user *{{ $.CheckPackage ($.Params.GetWithDefault "ClientAuth" "") $package }},{{ end }}
     {{- range $param := $.OpParams $path $op -}}
         {{- $name := print $op.OperationID " " $param.Value.Name -}}
         {{- if notEmpty $param.Ref }}{{ $name = trimPrefix "#/components/parameters/" $param.Ref }}{{ end -}}
@@ -146,6 +85,7 @@ func With{{ pascal $scheme }}Token(token string) ClientOption {
 {{- end -}}
 
 {{- $package := $.PackageName }}
+{{- $clientAuth := $.Params.GetWithDefault "ClientAuth" "" }}
 
 // Code generated by foji {{ version }}, template: {{ templateFile }}; DO NOT EDIT.
 
@@ -155,7 +95,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -163,52 +102,41 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
-{{- .CheckAllTypes $package ($.Params.GetWithDefault "Auth" "") -}}
+	"github.com/bir/iken/httputil"
+{{- .CheckAllTypes $package $clientAuth -}}
 {{- range .GoImports }}
 	"{{ . }}"
 {{- end }}
 )
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
+{{ if .HasAuthentication -}}
+{{ .ErrorIf (empty $clientAuth) "params.ClientAuth" -}}
 
-type ClientOption func(*Client)
+type (
+	ClientAuthenticator         = httputil.ClientAuthenticateFunc[*{{ $.CheckPackage $clientAuth $package }}]
+	ClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
+	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
+	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
+	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*{{ $.CheckPackage $clientAuth $package }}]
+)
+
+{{ end -}}
 
 type Client struct {
-	baseURL string
-	doer    Doer
-{{- range $security, $value := .API.Components.SecuritySchemes }}{{ template "authScheme" ($.WithParams "scheme" $security "mode" "field") }}{{- end }}
-}
-
-func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
-	c := &Client{baseURL: baseURL, doer: doer}
-
-	for _, opt := range opts {
-		opt(c)
-	}
-
-	return c
-}
-
+	baseURL    string
+	httpClient *http.Client
 {{- range $security, $value := .API.Components.SecuritySchemes }}
-{{ template "authScheme" ($.WithParams "scheme" $security "mode" "option") }}
+	{{ camel $security }}Auth ClientAuthenticator
 {{- end }}
-
-{{- if .HasAuthentication }}
-var ErrMissingAuthToken = errors.New("missing auth token")
-{{- end }}
-
-type APIError struct {
-	StatusCode int
-	Status     string
-	Body       []byte
 }
 
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.Status, string(e.Body))
+func NewClient(baseURL string, httpClient *http.Client
+{{- range $security, $value := .API.Components.SecuritySchemes }}, {{ template "clientAuth" ($.WithParams "scheme" $security "mode" "param") }}{{- end }}) *Client {
+	return &Client{
+		baseURL:    baseURL,
+		httpClient: httpClient,
+{{- range $security, $value := .API.Components.SecuritySchemes }}{{ template "clientAuth" ($.WithParams "scheme" $security "mode" "construct") }}{{- end }}
+	}
 }
 
 {{- range $name, $path := .API.Paths.Map }}
@@ -224,19 +152,6 @@ func (e *APIError) Error() string {
 {{- goDoc $op.Description }}
 func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
     {{- template "clientMethodSignature" ($.WithParams "op" $op "package" $package "path" $path) }} {
-        {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "resolve") }}{{- end }}
-        {{- if $.HasAnyAuth $op }}
-            {{- $groups := $.OpSecurityGroups $op }}
-            {{- $optional := false }}
-            {{- range $g := $groups }}{{ if eq (len $g) 0 }}{{ $optional = true }}{{ end }}{{ end }}
-            {{- if not $optional }}
-
-	if !({{ range $i, $g := $groups }}{{ if $i }} || {{ end }}({{ range $j, $scheme := $g }}{{ if $j }} && {{ end }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "provided") }}{{ end }}){{ end }}) {
-		return {{ $errRet }}ErrMissingAuthToken
-	}
-            {{- end }}
-        {{- end }}
-
 	u := c.baseURL + "{{ $name }}"
         {{- $hasQuery := false }}
         {{- range $param := $.OpParams $path $op }}{{ if eq $param.Value.In "query" }}{{ $hasQuery = true }}{{ end }}{{ end }}
@@ -406,19 +321,10 @@ func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
             {{- end }}
         {{- end }}
 
-        {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "inject") }}{{- end }}
+	httpClient := c.httpClient
+        {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "clientAuth" ($.WithParams "scheme" $scheme "mode" "apply" "errRet" $errRet) }}{{- end }}
 
-        {{- $opHasOAuth := false }}
-        {{- range $scheme := $.OpSecuritySchemes $op }}{{ $s := index $.API.Components.SecuritySchemes $scheme }}{{ if or (eq $s.Value.Type "oauth2") (eq $s.Value.Type "openIdConnect") }}{{ $opHasOAuth = true }}{{ end }}{{ end }}
-        {{- if $opHasOAuth }}
-	doer := c.doer
-            {{- range $scheme := $.OpSecuritySchemes $op }}{{ template "authScheme" ($.WithParams "scheme" $scheme "mode" "client") }}{{- end }}
-
-	resp, err := doer.Do(req)
-        {{- else }}
-
-	resp, err := c.doer.Do(req)
-        {{- end }}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return {{ $errRet }}err
 	}
@@ -432,7 +338,7 @@ func (c *Client) {{ pascal $op.OperationID }}(ctx context.Context,
         {{- end }}
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return {{ $errRet }}&APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return {{ $errRet }}httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
         {{- if eq $respType "" }}

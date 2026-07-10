@@ -4,144 +4,74 @@ package auth
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 
 	"github.com/bir/iken/httputil"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
+	"tests/example"
 )
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-type ClientOption func(*Client)
+type (
+	ClientAuthenticator         = httputil.ClientAuthenticateFunc[*example.ExampleAuth]
+	ClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*example.ExampleAuth]
+	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*example.ExampleAuth]
+	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*example.ExampleAuth]
+	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*example.ExampleAuth]
+)
 
 type Client struct {
-	baseURL                              string
-	doer                                 Doer
-	apiKeyCookieToken                    string
-	apiKeyHeaderToken                    string
-	apiKeyQueryToken                     string
-	basicAuthUsername                    string
-	basicAuthPassword                    string
-	bearerAuthToken                      string
-	oauth2ClientCredentialsExampleConfig *clientcredentials.Config
-	oauth2ExampleConfig                  oauth2.Config
-	openIdconnectConfig                  oauth2.Config
-	rawToken                             string
+	baseURL                            string
+	httpClient                         *http.Client
+	apiKeyCookieAuth                   ClientAuthenticator
+	apiKeyHeaderAuth                   ClientAuthenticator
+	apiKeyQueryAuth                    ClientAuthenticator
+	basicAuthAuth                      ClientAuthenticator
+	bearerAuthAuth                     ClientAuthenticator
+	oauth2ClientCredentialsExampleAuth ClientAuthenticator
+	oauth2ExampleAuth                  ClientAuthenticator
+	openIdconnectAuth                  ClientAuthenticator
+	rawAuth                            ClientAuthenticator
 }
 
-func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
-	c := &Client{baseURL: baseURL, doer: doer}
-
-	for _, opt := range opts {
-		opt(c)
+func NewClient(baseURL string, httpClient *http.Client, apiKeyCookieAuth ClientCookieAuthenticator, apiKeyHeaderAuth ClientTokenAuthenticator, apiKeyQueryAuth ClientTokenAuthenticator, basicAuthAuth ClientBasicAuthenticator, bearerAuthAuth ClientTokenAuthenticator, oauth2ClientCredentialsExampleAuth ClientWrappingAuthenticator, oauth2ExampleAuth ClientWrappingAuthenticator, openIdconnectAuth ClientWrappingAuthenticator, rawAuth ClientAuthenticator) *Client {
+	return &Client{
+		baseURL:                            baseURL,
+		httpClient:                         httpClient,
+		apiKeyCookieAuth:                   httputil.CookieClientAuth(apiKeyCookieAuth),
+		apiKeyHeaderAuth:                   httputil.HeaderClientAuth("X-API-Key", apiKeyHeaderAuth),
+		apiKeyQueryAuth:                    httputil.QueryClientAuth("query_key_name", apiKeyQueryAuth),
+		basicAuthAuth:                      httputil.BasicClientAuth(basicAuthAuth),
+		bearerAuthAuth:                     httputil.BearerClientAuth("Authorization", bearerAuthAuth),
+		oauth2ClientCredentialsExampleAuth: httputil.WrapClientAuth(oauth2ClientCredentialsExampleAuth),
+		oauth2ExampleAuth:                  httputil.WrapClientAuth(oauth2ExampleAuth),
+		openIdconnectAuth:                  httputil.WrapClientAuth(openIdconnectAuth),
+		rawAuth:                            rawAuth,
 	}
-
-	return c
-}
-
-func WithApiKeyCookieToken(token string) ClientOption {
-	return func(c *Client) {
-		c.apiKeyCookieToken = token
-	}
-}
-
-func WithApiKeyHeaderToken(token string) ClientOption {
-	return func(c *Client) {
-		c.apiKeyHeaderToken = token
-	}
-}
-
-func WithApiKeyQueryToken(token string) ClientOption {
-	return func(c *Client) {
-		c.apiKeyQueryToken = token
-	}
-}
-
-func WithBasicAuthCredentials(username, password string) ClientOption {
-	return func(c *Client) {
-		c.basicAuthUsername = username
-		c.basicAuthPassword = password
-	}
-}
-
-func WithBearerAuthToken(token string) ClientOption {
-	return func(c *Client) {
-		c.bearerAuthToken = token
-	}
-}
-
-func WithOauth2ClientCredentialsExampleConfig(config clientcredentials.Config) ClientOption {
-	return func(c *Client) {
-		c.oauth2ClientCredentialsExampleConfig = &config
-	}
-}
-
-func WithOauth2ExampleConfig(config oauth2.Config) ClientOption {
-	return func(c *Client) {
-		c.oauth2ExampleConfig = config
-	}
-}
-
-func WithOpenIdconnectConfig(config oauth2.Config) ClientOption {
-	return func(c *Client) {
-		c.openIdconnectConfig = config
-	}
-}
-
-func WithRawToken(token string) ClientOption {
-	return func(c *Client) {
-		c.rawToken = token
-	}
-}
-
-var ErrMissingAuthToken = errors.New("missing auth token")
-
-type APIError struct {
-	StatusCode int
-	Status     string
-	Body       []byte
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.Status, string(e.Body))
 }
 
 // ListAdminUsers
 // List all users (admin only)
 // Requires both API key AND bearer token with admin scope
-func (c *Client) ListAdminUsers(ctx context.Context, apiKeyHeaderToken string, bearerAuthToken string) ([]User, error) {
-	if apiKeyHeaderToken == "" {
-		apiKeyHeaderToken = c.apiKeyHeaderToken
-	}
-	if bearerAuthToken == "" {
-		bearerAuthToken = c.bearerAuthToken
-	}
-
-	if !(apiKeyHeaderToken != "" && bearerAuthToken != "") {
-		return nil, ErrMissingAuthToken
-	}
-
+func (c *Client) ListAdminUsers(ctx context.Context, user *example.ExampleAuth) ([]User, error) {
 	u := c.baseURL + "/admin/users"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	if apiKeyHeaderToken != "" {
-		req.Header.Set("X-API-Key", apiKeyHeaderToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
-	if bearerAuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
+	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +80,7 @@ func (c *Client) ListAdminUsers(ctx context.Context, apiKeyHeaderToken string, b
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out []User
@@ -164,24 +94,7 @@ func (c *Client) ListAdminUsers(ctx context.Context, apiKeyHeaderToken string, b
 // QueryDataWithApiKey
 // Query data with API key
 // Accepts API key in header, query parameter, or cookie
-func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken string, apiKeyHeaderToken string, apiKeyQueryToken string, rawToken string, query *string) error {
-	if apiKeyCookieToken == "" {
-		apiKeyCookieToken = c.apiKeyCookieToken
-	}
-	if apiKeyHeaderToken == "" {
-		apiKeyHeaderToken = c.apiKeyHeaderToken
-	}
-	if apiKeyQueryToken == "" {
-		apiKeyQueryToken = c.apiKeyQueryToken
-	}
-	if rawToken == "" {
-		rawToken = c.rawToken
-	}
-
-	if !((apiKeyHeaderToken != "") || (apiKeyQueryToken != "") || (apiKeyCookieToken != "") || (rawToken != "")) {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) QueryDataWithApiKey(ctx context.Context, user *example.ExampleAuth, query *string) error {
 	u := c.baseURL + "/data/query"
 	queryParams := url.Values{}
 	if query != nil {
@@ -196,22 +109,26 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken stri
 	if err != nil {
 		return err
 	}
-	if apiKeyCookieToken != "" {
-		req.AddCookie(&http.Cookie{Name: "cookie_name", Value: apiKeyCookieToken})
+
+	httpClient := c.httpClient
+	httpClient, err = c.apiKeyCookieAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if apiKeyHeaderToken != "" {
-		req.Header.Set("X-API-Key", apiKeyHeaderToken)
+	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if apiKeyQueryToken != "" {
-		q := req.URL.Query()
-		q.Set("query_key_name", apiKeyQueryToken)
-		req.URL.RawQuery = q.Encode()
+	httpClient, err = c.apiKeyQueryAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if rawToken != "" {
-		req.Header.Set("Authorization", rawToken)
+	httpClient, err = c.rawAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -220,7 +137,7 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken stri
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -229,27 +146,21 @@ func (c *Client) QueryDataWithApiKey(ctx context.Context, apiKeyCookieToken stri
 // ListDocuments
 // List documents
 // Requires basic authentication
-func (c *Client) ListDocuments(ctx context.Context, basicAuthUsername string, basicAuthPassword string) error {
-	if basicAuthUsername == "" {
-		basicAuthUsername = c.basicAuthUsername
-		basicAuthPassword = c.basicAuthPassword
-	}
-
-	if !(basicAuthUsername != "") {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) ListDocuments(ctx context.Context, user *example.ExampleAuth) error {
 	u := c.baseURL + "/documents"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if basicAuthUsername != "" {
-		req.SetBasicAuth(basicAuthUsername, basicAuthPassword)
+
+	httpClient := c.httpClient
+	httpClient, err = c.basicAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -258,7 +169,7 @@ func (c *Client) ListDocuments(ctx context.Context, basicAuthUsername string, ba
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -267,32 +178,25 @@ func (c *Client) ListDocuments(ctx context.Context, basicAuthUsername string, ba
 // CreateDocument
 // Create document
 // Requires API key with bearer token
-func (c *Client) CreateDocument(ctx context.Context, apiKeyHeaderToken string, bearerAuthToken string) error {
-	if apiKeyHeaderToken == "" {
-		apiKeyHeaderToken = c.apiKeyHeaderToken
-	}
-	if bearerAuthToken == "" {
-		bearerAuthToken = c.bearerAuthToken
-	}
-
-	if !(apiKeyHeaderToken != "" && bearerAuthToken != "") {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) CreateDocument(ctx context.Context, user *example.ExampleAuth) error {
 	u := c.baseURL + "/documents"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if apiKeyHeaderToken != "" {
-		req.Header.Set("X-API-Key", apiKeyHeaderToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if bearerAuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
+	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -301,7 +205,7 @@ func (c *Client) CreateDocument(ctx context.Context, apiKeyHeaderToken string, b
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -310,23 +214,21 @@ func (c *Client) CreateDocument(ctx context.Context, apiKeyHeaderToken string, b
 // Overview
 // System overview
 // Requires OAuth client credentials
-func (c *Client) Overview(ctx context.Context) error {
-	if !(c.oauth2ClientCredentialsExampleConfig != nil) {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) Overview(ctx context.Context, user *example.ExampleAuth) error {
 	u := c.baseURL + "/overview"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	doer := c.doer
-	if c.oauth2ClientCredentialsExampleConfig != nil {
-		doer = c.oauth2ClientCredentialsExampleConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer))
+
+	httpClient := c.httpClient
+	httpClient, err = c.oauth2ClientCredentialsExampleAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -335,7 +237,7 @@ func (c *Client) Overview(ctx context.Context) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -344,23 +246,21 @@ func (c *Client) Overview(ctx context.Context) error {
 // GetDetailedProfile
 // Get detailed profile
 // Requires OpenID Connect authentication
-func (c *Client) GetDetailedProfile(ctx context.Context, openIdconnectToken *oauth2.Token) error {
-	if !(openIdconnectToken != nil) {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) GetDetailedProfile(ctx context.Context, user *example.ExampleAuth) error {
 	u := c.baseURL + "/profile/detailed"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	doer := c.doer
-	if openIdconnectToken != nil {
-		doer = c.openIdconnectConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), openIdconnectToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.openIdconnectAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -369,7 +269,7 @@ func (c *Client) GetDetailedProfile(ctx context.Context, openIdconnectToken *oau
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -382,45 +282,33 @@ func (c *Client) GetDetailedProfile(ctx context.Context, openIdconnectToken *oau
 // 2. API key (header) + Basic auth, OR
 // 3. Bearer token + API
 // key (cookie)
-func (c *Client) GetProtectedResource(ctx context.Context, apiKeyCookieToken string, apiKeyHeaderToken string, basicAuthUsername string, basicAuthPassword string, bearerAuthToken string) error {
-	if apiKeyCookieToken == "" {
-		apiKeyCookieToken = c.apiKeyCookieToken
-	}
-	if apiKeyHeaderToken == "" {
-		apiKeyHeaderToken = c.apiKeyHeaderToken
-	}
-	if basicAuthUsername == "" {
-		basicAuthUsername = c.basicAuthUsername
-		basicAuthPassword = c.basicAuthPassword
-	}
-	if bearerAuthToken == "" {
-		bearerAuthToken = c.bearerAuthToken
-	}
-
-	if !((apiKeyHeaderToken != "" && basicAuthUsername != "") || (apiKeyCookieToken != "" && bearerAuthToken != "")) {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) GetProtectedResource(ctx context.Context, user *example.ExampleAuth) error {
 	u := c.baseURL + "/protected-resource"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if apiKeyCookieToken != "" {
-		req.AddCookie(&http.Cookie{Name: "cookie_name", Value: apiKeyCookieToken})
+
+	httpClient := c.httpClient
+	httpClient, err = c.apiKeyCookieAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if apiKeyHeaderToken != "" {
-		req.Header.Set("X-API-Key", apiKeyHeaderToken)
+	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if basicAuthUsername != "" {
-		req.SetBasicAuth(basicAuthUsername, basicAuthPassword)
+	httpClient, err = c.basicAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if bearerAuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
+	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -429,7 +317,7 @@ func (c *Client) GetProtectedResource(ctx context.Context, apiKeyCookieToken str
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -446,7 +334,9 @@ func (c *Client) GetPublicStatus(ctx context.Context) (*GetPublicStatusResponse,
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +345,7 @@ func (c *Client) GetPublicStatus(ctx context.Context) (*GetPublicStatusResponse,
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out GetPublicStatusResponse
@@ -469,36 +359,29 @@ func (c *Client) GetPublicStatus(ctx context.Context) (*GetPublicStatusResponse,
 // GetCurrentUser
 // Get current user
 // Requires either API key in header OR bearer token
-func (c *Client) GetCurrentUser(ctx context.Context, apiKeyHeaderToken string, bearerAuthToken string, oauth2ExampleToken *oauth2.Token) (*User, error) {
-	if apiKeyHeaderToken == "" {
-		apiKeyHeaderToken = c.apiKeyHeaderToken
-	}
-	if bearerAuthToken == "" {
-		bearerAuthToken = c.bearerAuthToken
-	}
-
-	if !((apiKeyHeaderToken != "") || (bearerAuthToken != "") || (oauth2ExampleToken != nil)) {
-		return nil, ErrMissingAuthToken
-	}
-
+func (c *Client) GetCurrentUser(ctx context.Context, user *example.ExampleAuth) (*User, error) {
 	u := c.baseURL + "/users/me"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	if apiKeyHeaderToken != "" {
-		req.Header.Set("X-API-Key", apiKeyHeaderToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.apiKeyHeaderAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
-	if bearerAuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
+	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
-	doer := c.doer
-	if oauth2ExampleToken != nil {
-		doer = c.oauth2ExampleConfig.Client(context.WithValue(ctx, oauth2.HTTPClient, c.doer), oauth2ExampleToken)
+	httpClient, err = c.oauth2ExampleAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +390,7 @@ func (c *Client) GetCurrentUser(ctx context.Context, apiKeyHeaderToken string, b
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out User
@@ -521,26 +404,21 @@ func (c *Client) GetCurrentUser(ctx context.Context, apiKeyHeaderToken string, b
 // GetUserProfile
 // Get user profile
 // Requires bearer token authentication
-func (c *Client) GetUserProfile(ctx context.Context, bearerAuthToken string) (*User, error) {
-	if bearerAuthToken == "" {
-		bearerAuthToken = c.bearerAuthToken
-	}
-
-	if !(bearerAuthToken != "") {
-		return nil, ErrMissingAuthToken
-	}
-
+func (c *Client) GetUserProfile(ctx context.Context, user *example.ExampleAuth) (*User, error) {
 	u := c.baseURL + "/users/profile"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	if bearerAuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.bearerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +427,7 @@ func (c *Client) GetUserProfile(ctx context.Context, bearerAuthToken string) (*U
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out User

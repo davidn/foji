@@ -61,6 +61,7 @@ components:
     # Custom auth that processes the request directly using `x-raw-auth`.
     Raw:
       x-raw-auth: true
+      x-raw-client-auth: true
       type: apiKey
       name: Authorization
       in: header

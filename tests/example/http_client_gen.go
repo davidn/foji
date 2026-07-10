@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -20,72 +19,34 @@ import (
 	"github.com/google/uuid"
 )
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-type ClientOption func(*Client)
+type (
+	ClientAuthenticator         = httputil.ClientAuthenticateFunc[*ExampleAuth]
+	ClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*ExampleAuth]
+	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*ExampleAuth]
+	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*ExampleAuth]
+	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
+)
 
 type Client struct {
-	baseURL               string
-	doer                  Doer
-	bearerToken           string
-	customHeaderAuthToken string
-	headerAuthToken       string
-	jwtToken              string
-	rawToken              string
+	baseURL              string
+	httpClient           *http.Client
+	bearerAuth           ClientAuthenticator
+	customHeaderAuthAuth ClientAuthenticator
+	headerAuthAuth       ClientAuthenticator
+	jwtAuth              ClientAuthenticator
+	rawAuth              ClientAuthenticator
 }
 
-func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
-	c := &Client{baseURL: baseURL, doer: doer}
-
-	for _, opt := range opts {
-		opt(c)
+func NewClient(baseURL string, httpClient *http.Client, bearerAuth ClientTokenAuthenticator, customHeaderAuthAuth ClientTokenAuthenticator, headerAuthAuth ClientTokenAuthenticator, jwtAuth ClientTokenAuthenticator, rawAuth ClientTokenAuthenticator) *Client {
+	return &Client{
+		baseURL:              baseURL,
+		httpClient:           httpClient,
+		bearerAuth:           httputil.BearerClientAuth("Authorization", bearerAuth),
+		customHeaderAuthAuth: httputil.HeaderClientAuth("X-CUSTOM-HEADER", customHeaderAuthAuth),
+		headerAuthAuth:       httputil.HeaderClientAuth("Authorization", headerAuthAuth),
+		jwtAuth:              httputil.QueryClientAuth("jwt", jwtAuth),
+		rawAuth:              httputil.HeaderClientAuth("Authorization", rawAuth),
 	}
-
-	return c
-}
-
-func WithBearerToken(token string) ClientOption {
-	return func(c *Client) {
-		c.bearerToken = token
-	}
-}
-
-func WithCustomHeaderAuthToken(token string) ClientOption {
-	return func(c *Client) {
-		c.customHeaderAuthToken = token
-	}
-}
-
-func WithHeaderAuthToken(token string) ClientOption {
-	return func(c *Client) {
-		c.headerAuthToken = token
-	}
-}
-
-func WithJwtToken(token string) ClientOption {
-	return func(c *Client) {
-		c.jwtToken = token
-	}
-}
-
-func WithRawToken(token string) ClientOption {
-	return func(c *Client) {
-		c.rawToken = token
-	}
-}
-
-var ErrMissingAuthToken = errors.New("missing auth token")
-
-type APIError struct {
-	StatusCode int
-	Status     string
-	Body       []byte
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.Status, string(e.Body))
 }
 
 // GetExamples
@@ -97,7 +58,9 @@ func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +69,7 @@ func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Examples
@@ -118,34 +81,25 @@ func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
 }
 
 // GetAuthComplex
-func (c *Client) GetAuthComplex(ctx context.Context, headerAuthToken string, jwtToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-	if jwtToken == "" {
-		jwtToken = c.jwtToken
-	}
-
-	if !((headerAuthToken != "") || (jwtToken != "")) {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) GetAuthComplex(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/complex"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if jwtToken != "" {
-		q := req.URL.Query()
-		q.Set("jwt", jwtToken)
-		req.URL.RawQuery = q.Encode()
+	httpClient, err = c.jwtAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -154,33 +108,28 @@ func (c *Client) GetAuthComplex(ctx context.Context, headerAuthToken string, jwt
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetAuthSimple
-func (c *Client) GetAuthSimple(ctx context.Context, headerAuthToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-
-	if !(headerAuthToken != "") {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) GetAuthSimple(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -189,29 +138,28 @@ func (c *Client) GetAuthSimple(ctx context.Context, headerAuthToken string) erro
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetAuthSimpleMaybe
-func (c *Client) GetAuthSimpleMaybe(ctx context.Context, headerAuthToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-
+func (c *Client) GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple/maybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -220,33 +168,28 @@ func (c *Client) GetAuthSimpleMaybe(ctx context.Context, headerAuthToken string)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetAuthSimple2
-func (c *Client) GetAuthSimple2(ctx context.Context, headerAuthToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-
-	if !(headerAuthToken != "") {
-		return ErrMissingAuthToken
-	}
-
+func (c *Client) GetAuthSimple2(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple2"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -255,29 +198,28 @@ func (c *Client) GetAuthSimple2(ctx context.Context, headerAuthToken string) err
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetAuthSimple2Maybe
-func (c *Client) GetAuthSimple2Maybe(ctx context.Context, headerAuthToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-
+func (c *Client) GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple2/maybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -286,37 +228,32 @@ func (c *Client) GetAuthSimple2Maybe(ctx context.Context, headerAuthToken string
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetAuthComplexMaybe
-func (c *Client) GetAuthComplexMaybe(ctx context.Context, headerAuthToken string, jwtToken string) error {
-	if headerAuthToken == "" {
-		headerAuthToken = c.headerAuthToken
-	}
-	if jwtToken == "" {
-		jwtToken = c.jwtToken
-	}
-
+func (c *Client) GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/complexAuthMaybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return err
 	}
-	if headerAuthToken != "" {
-		req.Header.Set("Authorization", headerAuthToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.headerAuthAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
-	if jwtToken != "" {
-		q := req.URL.Query()
-		q.Set("jwt", jwtToken)
-		req.URL.RawQuery = q.Encode()
+	httpClient, err = c.jwtAuth(req, httpClient, user)
+	if err != nil {
+		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -325,45 +262,36 @@ func (c *Client) GetAuthComplexMaybe(ctx context.Context, headerAuthToken string
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
 }
 
 // GetComplexSecurity
-func (c *Client) GetComplexSecurity(ctx context.Context, bearerToken string, customHeaderAuthToken string, rawToken string) ([]TestInt, error) {
-	if bearerToken == "" {
-		bearerToken = c.bearerToken
-	}
-	if customHeaderAuthToken == "" {
-		customHeaderAuthToken = c.customHeaderAuthToken
-	}
-	if rawToken == "" {
-		rawToken = c.rawToken
-	}
-
-	if !((rawToken != "") || (bearerToken != "") || (customHeaderAuthToken != "")) {
-		return nil, ErrMissingAuthToken
-	}
-
+func (c *Client) GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]TestInt, error) {
 	u := c.baseURL + "/examples/complexSecurity"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
-	if bearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerToken)
+
+	httpClient := c.httpClient
+	httpClient, err = c.bearerAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
-	if customHeaderAuthToken != "" {
-		req.Header.Set("X-CUSTOM-HEADER", customHeaderAuthToken)
+	httpClient, err = c.customHeaderAuthAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
-	if rawToken != "" {
-		req.Header.Set("Authorization", rawToken)
+	httpClient, err = c.rawAuth(req, httpClient, user)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +300,7 @@ func (c *Client) GetComplexSecurity(ctx context.Context, bearerToken string, cus
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out []TestInt
@@ -452,7 +380,9 @@ func (c *Client) AddForm(ctx context.Context, body AddFormRequest) (*FooBar, err
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +391,7 @@ func (c *Client) AddForm(ctx context.Context, body AddFormRequest) (*FooBar, err
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out FooBar
@@ -537,7 +467,9 @@ func (c *Client) AddMultipartForm(ctx context.Context, body AddMultipartFormRequ
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -546,7 +478,7 @@ func (c *Client) AddMultipartForm(ctx context.Context, body AddMultipartFormRequ
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out FooBar
@@ -567,7 +499,9 @@ func (c *Client) HeaderResponse(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -576,7 +510,7 @@ func (c *Client) HeaderResponse(ctx context.Context) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -601,7 +535,9 @@ func (c *Client) AddInlinedAllOf(ctx context.Context, body AddInlinedAllOfReques
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +546,7 @@ func (c *Client) AddInlinedAllOf(ctx context.Context, body AddInlinedAllOfReques
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out FooBar
@@ -640,7 +576,9 @@ func (c *Client) AddInlinedBody(ctx context.Context, body AddInlinedBodyRequest)
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -649,7 +587,7 @@ func (c *Client) AddInlinedBody(ctx context.Context, body AddInlinedBodyRequest)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out FooBar
@@ -680,7 +618,9 @@ func (c *Client) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, 
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -689,7 +629,7 @@ func (c *Client) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -719,7 +659,9 @@ func (c *Client) NoResponse(ctx context.Context, body Foo) error {
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -728,7 +670,7 @@ func (c *Client) NoResponse(ctx context.Context, body Foo) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return nil
@@ -764,7 +706,9 @@ func (c *Client) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UU
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -773,7 +717,7 @@ func (c *Client) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UU
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -809,7 +753,9 @@ func (c *Client) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +764,7 @@ func (c *Client) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -848,7 +794,9 @@ func (c *Client) GetRawBody(ctx context.Context, body Foo) (*Example, error) {
 
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -857,7 +805,7 @@ func (c *Client) GetRawBody(ctx context.Context, body Foo) (*Example, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -883,7 +831,9 @@ func (c *Client) GetRawRequest(ctx context.Context, vehicle GetRawRequestVehicle
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -892,7 +842,7 @@ func (c *Client) GetRawRequest(ctx context.Context, vehicle GetRawRequestVehicle
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -918,7 +868,9 @@ func (c *Client) GetRawRequestResponse(ctx context.Context, vehicle GetRawReques
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -927,7 +879,7 @@ func (c *Client) GetRawRequestResponse(ctx context.Context, vehicle GetRawReques
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -953,7 +905,9 @@ func (c *Client) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle Ge
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -962,7 +916,7 @@ func (c *Client) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle Ge
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -988,7 +942,9 @@ func (c *Client) GetRawResponse(ctx context.Context, vehicle GetRawResponseVehic
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -997,7 +953,7 @@ func (c *Client) GetRawResponse(ctx context.Context, vehicle GetRawResponseVehic
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example
@@ -1028,7 +984,9 @@ func (c *Client) GetTest(ctx context.Context, vehicle GetTestVehicle, vehicleDef
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1037,7 +995,7 @@ func (c *Client) GetTest(ctx context.Context, vehicle GetTestVehicle, vehicleDef
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	var out Example

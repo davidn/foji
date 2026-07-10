@@ -4,50 +4,33 @@ package csvresponse
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/bir/iken/httputil"
 )
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-type ClientOption func(*Client)
+type (
+	ClientAuthenticator         = httputil.ClientAuthenticateFunc[*ExampleAuth]
+	ClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*ExampleAuth]
+	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*ExampleAuth]
+	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*ExampleAuth]
+	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
+)
 
 type Client struct {
-	baseURL         string
-	doer            Doer
-	headerAuthToken string
+	baseURL        string
+	httpClient     *http.Client
+	headerAuthAuth ClientAuthenticator
 }
 
-func NewClient(baseURL string, doer Doer, opts ...ClientOption) *Client {
-	c := &Client{baseURL: baseURL, doer: doer}
-
-	for _, opt := range opts {
-		opt(c)
+func NewClient(baseURL string, httpClient *http.Client, headerAuthAuth ClientTokenAuthenticator) *Client {
+	return &Client{
+		baseURL:        baseURL,
+		httpClient:     httpClient,
+		headerAuthAuth: httputil.HeaderClientAuth("Authorization", headerAuthAuth),
 	}
-
-	return c
-}
-
-func WithHeaderAuthToken(token string) ClientOption {
-	return func(c *Client) {
-		c.headerAuthToken = token
-	}
-}
-
-var ErrMissingAuthToken = errors.New("missing auth token")
-
-type APIError struct {
-	StatusCode int
-	Status     string
-	Body       []byte
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.Status, string(e.Body))
 }
 
 // GetByteCsv
@@ -59,7 +42,9 @@ func (c *Client) GetByteCsv(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +53,7 @@ func (c *Client) GetByteCsv(ctx context.Context) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	out, err := io.ReadAll(resp.Body)
@@ -88,7 +73,9 @@ func (c *Client) GetReaderCsv(ctx context.Context) (io.Reader, error) {
 		return nil, err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +84,7 @@ func (c *Client) GetReaderCsv(ctx context.Context) (io.Reader, error) {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	return resp.Body, nil
@@ -112,7 +99,9 @@ func (c *Client) GetStringCsv(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	resp, err := c.doer.Do(req)
+	httpClient := c.httpClient
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +110,7 @@ func (c *Client) GetStringCsv(ctx context.Context) (string, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(resp.Body)
 
-		return "", &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Body: errBody}
+		return "", httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
 	out, err := io.ReadAll(resp.Body)
