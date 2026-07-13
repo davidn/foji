@@ -16,8 +16,6 @@
     {{- end -}}
 {{- end -}}
 
-{{- /* clientAuth classifies a security scheme and emits the fragment for the requested mode:
-       param (NewClient argument), construct (Client field initializer) or apply (per-request call). */}}
 {{- define "clientAuth" -}}
     {{- $scheme := .RuntimeParams.scheme -}}
     {{- $mode := .RuntimeParams.mode -}}
