@@ -656,6 +656,52 @@ func (o *OpenAPIFileContext) OpSecurity(op *openapi3.Operation) openapi3.Securit
 	return o.API.Security
 }
 
+// OpSecuritySchemes returns the distinct security scheme names referenced by the operation
+// across all of its security requirement groups, sorted for deterministic output.
+func (o *OpenAPIFileContext) OpSecuritySchemes(op *openapi3.Operation) []string {
+	seen := map[string]bool{}
+
+	for _, group := range o.OpSecurity(op) {
+		for key := range group {
+			seen[key] = true
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
+// OpSecurityGroups returns the operation's security requirement groups as sorted scheme-name
+// slices (AND within a group, OR across groups), with duplicate groups removed so the generated
+// validation does not repeat identical conditions.  An empty slice element represents an empty
+// requirement (anonymous access permitted).
+func (o *OpenAPIFileContext) OpSecurityGroups(op *openapi3.Operation) [][]string {
+	var out [][]string
+
+	seen := map[string]bool{}
+
+	for _, group := range o.OpSecurity(op) {
+		schemes := mapKeysSorted(group)
+
+		key := strings.Join(schemes, "\x00")
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		out = append(out, schemes)
+	}
+
+	return out
+}
+
 func hasAuthorization(security openapi3.SecurityRequirements) bool {
 	for _, ss := range security {
 		for _, scopes := range ss {
