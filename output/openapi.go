@@ -95,7 +95,19 @@ func (o *OpenAPIFileContext) GetTypeName(pkg string, s *openapi3.SchemaRef) stri
 		return o.CheckPackage(t, pkg)
 	}
 
-	return o.CheckPackage(ref, pkg)
+	return o.CheckPackage(o.PrefixType(ref), pkg)
+}
+
+// PrefixType applies the TypePrefix param (if any) to a type name, which may be package-qualified.
+func (o *OpenAPIFileContext) PrefixType(name string) string {
+	prefix := o.Params.GetWithDefault("TypePrefix", "")
+	if prefix == "" {
+		return name
+	}
+
+	pos := strings.LastIndex(name, ".") + 1
+
+	return name[:pos] + prefix + name[pos:]
 }
 
 func (o *OpenAPIFileContext) TypeOnly(name string) string {
@@ -193,7 +205,7 @@ func (o *OpenAPIFileContext) GetType(currentPackage, name string, s *openapi3.Sc
 			return "any"
 		}
 
-		name = o.PackageName() + "." + kace.Pascal(name)
+		name = o.PrefixType(o.PackageName() + "." + kace.Pascal(name))
 
 		return o.CheckPackage(name, currentPackage)
 	}
@@ -211,7 +223,7 @@ func (o *OpenAPIFileContext) GetType(currentPackage, name string, s *openapi3.Sc
 
 func (o *OpenAPIFileContext) EnumName(name string) string {
 	// TODO: Support override via template
-	return o.PackageName() + "." + kace.Pascal(name)
+	return o.PrefixType(o.PackageName() + "." + kace.Pascal(name))
 }
 
 func (o *OpenAPIFileContext) EnumNew(name string) string {
