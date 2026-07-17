@@ -50,6 +50,8 @@ func clientRaw(r *http.Request, inner *http.Client, user *example.ExampleAuth) (
 	return inner, nil
 }
 
+func isA[T any](_ T) {}
+
 func main() {
 	// Requires the generated Operations to match the Service layer
 	var _ csvresponse.Operations = &csvresponse.Service{}
@@ -60,10 +62,10 @@ func main() {
 	var authOps auth.Operations = &auth.Service{}
 	auth.RegisterHTTP(authOps, http.NewServeMux(), tokenAuth, tokenAuth, tokenAuth, basicAuth, tokenAuth, rawAuth, rawAuth, rawAuth, rawAuth, authorize)
 
-	// Requires the generated clients to construct with authenticators matching each security scheme.
-	_ = csvresponse.NewClient("http://localhost", http.DefaultClient, csvClientToken)
-	_ = example.NewClient("http://localhost", http.DefaultClient, clientToken, clientToken, clientToken, clientToken, clientToken)
-	_ = auth.NewClient("http://localhost", http.DefaultClient, clientCookie, clientToken, clientToken, clientBasic, clientToken, clientWrap, clientWrap, clientWrap, clientRaw)
+	// Requires the generated clients to construct with authenticators matching each security scheme, and meet the interface.
+	isA[csvresponse.Methods](csvresponse.NewClient("http://localhost", http.DefaultClient, csvClientToken))
+	isA[example.ExampleMethods](example.NewExampleClient("http://localhost", http.DefaultClient, clientToken, clientToken, clientToken, clientToken, clientToken))
+	isA[auth.Methods](auth.NewClient("http://localhost", http.DefaultClient, clientCookie, clientToken, clientToken, clientBasic, clientToken, clientWrap, clientWrap, clientWrap, clientRaw))
 
 	os.Exit(0)
 }
