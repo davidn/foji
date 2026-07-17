@@ -193,7 +193,7 @@ func (e *{{ $enumType }}) Scan(src any) error {
 {{- $key := .RuntimeParams.key }}
 {{- $label := .RuntimeParams.label }}
 
-{{- if not ($.HasExtension $schema "x-go-type" )}}
+{{- if or ($.Params.GetBool "IgnoreGoType") (not ($.HasExtension $schema "x-go-type" ))}}
 {{- $typeName := $.GetType $.PackageName $key $schema }}
 // {{ $typeName}}
 {{- goDoc $schema.Value.Description }}
@@ -275,7 +275,7 @@ func (p *{{ pascal $key }}) UnmarshalJSON(b []byte) error {
     var validationErrors validation.Errors
             {{ range $field, $schemaProp := ($.RequiredProperties $schema) }}
     if _, ok := requiredCheck["{{ $field }}"]; !ok {
-        validationErrors.Add("{{ $field }}", ErrMissingRequiredField)
+        validationErrors.Add("{{ $field }}", Err{{ $.Params.GetWithDefault "TypePrefix" "" }}MissingRequiredField)
     }
             {{ end }}
 
@@ -506,7 +506,7 @@ import (
     "github.com/bir/iken/validation"
 )
 
-var ErrMissingRequiredField = errors.New("missing required field")
+var Err{{ $.Params.GetWithDefault "TypePrefix" "" }}MissingRequiredField = errors.New("missing required field")
 
 // Component Schemas
 
