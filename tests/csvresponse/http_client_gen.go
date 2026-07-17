@@ -19,6 +19,12 @@ type (
 	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
 )
 
+type Methods interface {
+	GetByteCsv(ctx context.Context) ([]byte, error)
+	GetReaderCsv(ctx context.Context) (io.Reader, error)
+	GetStringCsv(ctx context.Context) (string, error)
+}
+
 type Client struct {
 	baseURL        string
 	httpClient     *http.Client

@@ -22,6 +22,19 @@ type (
 	ClientSecurityGroups        = httputil.ClientSecurityGroups[*example.ExampleAuth]
 )
 
+type Methods interface {
+	ListAdminUsers(ctx context.Context, user *example.ExampleAuth) ([]User, error)
+	QueryDataWithApiKey(ctx context.Context, user *example.ExampleAuth, query *string) error
+	ListDocuments(ctx context.Context, user *example.ExampleAuth) error
+	CreateDocument(ctx context.Context, user *example.ExampleAuth) error
+	Overview(ctx context.Context, user *example.ExampleAuth) error
+	GetDetailedProfile(ctx context.Context, user *example.ExampleAuth) error
+	GetProtectedResource(ctx context.Context, user *example.ExampleAuth) error
+	GetPublicStatus(ctx context.Context) (*GetPublicStatusResponse, error)
+	GetCurrentUser(ctx context.Context, user *example.ExampleAuth) (*User, error)
+	GetUserProfile(ctx context.Context, user *example.ExampleAuth) (*User, error)
+}
+
 type Client struct {
 	baseURL                            string
 	httpClient                         *http.Client

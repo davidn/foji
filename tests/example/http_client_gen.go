@@ -20,32 +20,58 @@ import (
 )
 
 type (
-	ClientAuthenticator         = httputil.ClientAuthenticateFunc[*ExampleAuth]
-	ClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*ExampleAuth]
-	ClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*ExampleAuth]
-	ClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*ExampleAuth]
-	ClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
-	ClientSecurityGroup         = httputil.ClientSecurityGroup[*ExampleAuth]
-	ClientSecurityGroups        = httputil.ClientSecurityGroups[*ExampleAuth]
+	ExampleClientAuthenticator         = httputil.ClientAuthenticateFunc[*ExampleAuth]
+	ExampleClientTokenAuthenticator    = httputil.ClientTokenAuthenticatorFunc[*ExampleAuth]
+	ExampleClientBasicAuthenticator    = httputil.ClientBasicAuthenticatorFunc[*ExampleAuth]
+	ExampleClientCookieAuthenticator   = httputil.ClientCookieAuthenticatorFunc[*ExampleAuth]
+	ExampleClientWrappingAuthenticator = httputil.ClientWrappingAuthenticatorFunc[*ExampleAuth]
+	ExampleClientSecurityGroup         = httputil.ClientSecurityGroup[*ExampleAuth]
+	ExampleClientSecurityGroups        = httputil.ClientSecurityGroups[*ExampleAuth]
 )
 
-type Client struct {
-	baseURL                     string
-	httpClient                  *http.Client
-	bearerAuth                  ClientAuthenticator
-	customHeaderAuthAuth        ClientAuthenticator
-	headerAuthAuth              ClientAuthenticator
-	jwtAuth                     ClientAuthenticator
-	rawAuth                     ClientAuthenticator
-	getAuthComplexSecurity      ClientSecurityGroups
-	getAuthSimpleMaybeSecurity  ClientSecurityGroups
-	getAuthSimple2MaybeSecurity ClientSecurityGroups
-	getAuthComplexMaybeSecurity ClientSecurityGroups
-	getComplexSecuritySecurity  ClientSecurityGroups
+type ExampleMethods interface {
+	GetExamples(ctx context.Context) (*ExampleExamples, error)
+	GetAuthComplex(ctx context.Context, user *ExampleAuth) error
+	GetAuthSimple(ctx context.Context, user *ExampleAuth) error
+	GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) error
+	GetAuthSimple2(ctx context.Context, user *ExampleAuth) error
+	GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) error
+	GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) error
+	GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]TestInt, error)
+	AddForm(ctx context.Context, body ExampleAddFormRequest) (*ExampleFooBar, error)
+	AddMultipartForm(ctx context.Context, body ExampleAddMultipartFormRequest) (*ExampleFooBar, error)
+	HeaderResponse(ctx context.Context) error
+	AddInlinedAllOf(ctx context.Context, body ExampleAddInlinedAllOfRequest) (*ExampleFooBar, error)
+	AddInlinedBody(ctx context.Context, body ExampleAddInlinedBodyRequest) (*ExampleFooBar, error)
+	GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, enumTest ExampleGetExampleParamsEnumTest) (*ExampleExample, error)
+	NoResponse(ctx context.Context, body ExampleFoo) error
+	GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UUID, k3 *time.Time, k4 *int32, k5 *int64, k5Default int64) (*ExampleExample, error)
+	GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, k6 []string, k7 []uuid.UUID) (*ExampleExample, error)
+	GetRawBody(ctx context.Context, body ExampleFoo) (*ExampleExample, error)
+	GetRawRequest(ctx context.Context, vehicle ExampleGetRawRequestVehicle) (*ExampleExample, error)
+	GetRawRequestResponse(ctx context.Context, vehicle ExampleGetRawRequestResponseVehicle) (*ExampleExample, error)
+	GetRawRequestResponseAndHeaders(ctx context.Context, vehicle ExampleGetRawRequestResponseAndHeadersVehicle) (*ExampleExample, error)
+	GetRawResponse(ctx context.Context, vehicle ExampleGetRawResponseVehicle) (*ExampleExample, error)
+	GetTest(ctx context.Context, vehicle ExampleGetTestVehicle, vehicleDefault ExampleGetTestVehicleDefault, playerID uuid.UUID, color ExampleColorQuery, colorDefault ExampleColorQueryDefault, season ExampleSeason) (*ExampleExample, error)
 }
 
-func NewClient(baseURL string, httpClient *http.Client, bearerAuth ClientTokenAuthenticator, customHeaderAuthAuth ClientTokenAuthenticator, headerAuthAuth ClientTokenAuthenticator, jwtAuth ClientTokenAuthenticator, rawAuth ClientTokenAuthenticator) *Client {
-	c := &Client{
+type ExampleClient struct {
+	baseURL                     string
+	httpClient                  *http.Client
+	bearerAuth                  ExampleClientAuthenticator
+	customHeaderAuthAuth        ExampleClientAuthenticator
+	headerAuthAuth              ExampleClientAuthenticator
+	jwtAuth                     ExampleClientAuthenticator
+	rawAuth                     ExampleClientAuthenticator
+	getAuthComplexSecurity      ExampleClientSecurityGroups
+	getAuthSimpleMaybeSecurity  ExampleClientSecurityGroups
+	getAuthSimple2MaybeSecurity ExampleClientSecurityGroups
+	getAuthComplexMaybeSecurity ExampleClientSecurityGroups
+	getComplexSecuritySecurity  ExampleClientSecurityGroups
+}
+
+func NewExampleClient(baseURL string, httpClient *http.Client, bearerAuth ExampleClientTokenAuthenticator, customHeaderAuthAuth ExampleClientTokenAuthenticator, headerAuthAuth ExampleClientTokenAuthenticator, jwtAuth ExampleClientTokenAuthenticator, rawAuth ExampleClientTokenAuthenticator) *ExampleClient {
+	c := &ExampleClient{
 		baseURL:              baseURL,
 		httpClient:           httpClient,
 		bearerAuth:           httputil.BearerClientAuth("Authorization", bearerAuth),
@@ -55,40 +81,40 @@ func NewClient(baseURL string, httpClient *http.Client, bearerAuth ClientTokenAu
 		rawAuth:              httputil.HeaderClientAuth("Authorization", rawAuth),
 	}
 
-	c.getAuthComplexSecurity = ClientSecurityGroups{
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{c.jwtAuth},
+	c.getAuthComplexSecurity = ExampleClientSecurityGroups{
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{c.jwtAuth},
 	}
 
-	c.getAuthSimpleMaybeSecurity = ClientSecurityGroups{
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{},
+	c.getAuthSimpleMaybeSecurity = ExampleClientSecurityGroups{
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{},
 	}
 
-	c.getAuthSimple2MaybeSecurity = ClientSecurityGroups{
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{},
+	c.getAuthSimple2MaybeSecurity = ExampleClientSecurityGroups{
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{},
 	}
 
-	c.getAuthComplexMaybeSecurity = ClientSecurityGroups{
-		ClientSecurityGroup{c.headerAuthAuth},
-		ClientSecurityGroup{c.jwtAuth},
-		ClientSecurityGroup{},
+	c.getAuthComplexMaybeSecurity = ExampleClientSecurityGroups{
+		ExampleClientSecurityGroup{c.headerAuthAuth},
+		ExampleClientSecurityGroup{c.jwtAuth},
+		ExampleClientSecurityGroup{},
 	}
 
-	c.getComplexSecuritySecurity = ClientSecurityGroups{
-		ClientSecurityGroup{c.rawAuth},
-		ClientSecurityGroup{c.bearerAuth},
-		ClientSecurityGroup{c.customHeaderAuthAuth},
+	c.getComplexSecuritySecurity = ExampleClientSecurityGroups{
+		ExampleClientSecurityGroup{c.rawAuth},
+		ExampleClientSecurityGroup{c.bearerAuth},
+		ExampleClientSecurityGroup{c.customHeaderAuthAuth},
 	}
 
 	return c
 }
 
 // GetExamples
-func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
+func (c *ExampleClient) GetExamples(ctx context.Context) (*ExampleExamples, error) {
 	u := c.baseURL + "/examples"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -110,7 +136,7 @@ func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Examples
+	var out ExampleExamples
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -119,7 +145,7 @@ func (c *Client) GetExamples(ctx context.Context) (*Examples, error) {
 }
 
 // GetAuthComplex
-func (c *Client) GetAuthComplex(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthComplex(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/complex"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -149,7 +175,7 @@ func (c *Client) GetAuthComplex(ctx context.Context, user *ExampleAuth) error {
 }
 
 // GetAuthSimple
-func (c *Client) GetAuthSimple(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthSimple(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -179,7 +205,7 @@ func (c *Client) GetAuthSimple(ctx context.Context, user *ExampleAuth) error {
 }
 
 // GetAuthSimpleMaybe
-func (c *Client) GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple/maybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -209,7 +235,7 @@ func (c *Client) GetAuthSimpleMaybe(ctx context.Context, user *ExampleAuth) erro
 }
 
 // GetAuthSimple2
-func (c *Client) GetAuthSimple2(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthSimple2(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple2"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -239,7 +265,7 @@ func (c *Client) GetAuthSimple2(ctx context.Context, user *ExampleAuth) error {
 }
 
 // GetAuthSimple2Maybe
-func (c *Client) GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/auth/simple2/maybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -269,7 +295,7 @@ func (c *Client) GetAuthSimple2Maybe(ctx context.Context, user *ExampleAuth) err
 }
 
 // GetAuthComplexMaybe
-func (c *Client) GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) error {
+func (c *ExampleClient) GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) error {
 	u := c.baseURL + "/examples/complexAuthMaybe"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -299,7 +325,7 @@ func (c *Client) GetAuthComplexMaybe(ctx context.Context, user *ExampleAuth) err
 }
 
 // GetComplexSecurity
-func (c *Client) GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]TestInt, error) {
+func (c *ExampleClient) GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]TestInt, error) {
 	u := c.baseURL + "/examples/complexSecurity"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -334,7 +360,7 @@ func (c *Client) GetComplexSecurity(ctx context.Context, user *ExampleAuth) ([]T
 }
 
 // AddForm
-func (c *Client) AddForm(ctx context.Context, body AddFormRequest) (*FooBar, error) {
+func (c *ExampleClient) AddForm(ctx context.Context, body ExampleAddFormRequest) (*ExampleFooBar, error) {
 	u := c.baseURL + "/examples/form"
 
 	form := url.Values{}
@@ -416,7 +442,7 @@ func (c *Client) AddForm(ctx context.Context, body AddFormRequest) (*FooBar, err
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out FooBar
+	var out ExampleFooBar
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -425,7 +451,7 @@ func (c *Client) AddForm(ctx context.Context, body AddFormRequest) (*FooBar, err
 }
 
 // AddMultipartForm
-func (c *Client) AddMultipartForm(ctx context.Context, body AddMultipartFormRequest) (*FooBar, error) {
+func (c *ExampleClient) AddMultipartForm(ctx context.Context, body ExampleAddMultipartFormRequest) (*ExampleFooBar, error) {
 	u := c.baseURL + "/examples/form:multipart"
 
 	var bodyBuf bytes.Buffer
@@ -503,7 +529,7 @@ func (c *Client) AddMultipartForm(ctx context.Context, body AddMultipartFormRequ
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out FooBar
+	var out ExampleFooBar
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -513,7 +539,7 @@ func (c *Client) AddMultipartForm(ctx context.Context, body AddMultipartFormRequ
 
 // HeaderResponse
 // Check header responses
-func (c *Client) HeaderResponse(ctx context.Context) error {
+func (c *ExampleClient) HeaderResponse(ctx context.Context) error {
 	u := c.baseURL + "/examples/header"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, http.NoBody)
@@ -539,7 +565,7 @@ func (c *Client) HeaderResponse(ctx context.Context) error {
 }
 
 // AddInlinedAllOf
-func (c *Client) AddInlinedAllOf(ctx context.Context, body AddInlinedAllOfRequest) (*FooBar, error) {
+func (c *ExampleClient) AddInlinedAllOf(ctx context.Context, body ExampleAddInlinedAllOfRequest) (*ExampleFooBar, error) {
 	u := c.baseURL + "/examples/inlinedAllOf"
 
 	buf, err := json.Marshal(body)
@@ -571,7 +597,7 @@ func (c *Client) AddInlinedAllOf(ctx context.Context, body AddInlinedAllOfReques
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out FooBar
+	var out ExampleFooBar
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -580,7 +606,7 @@ func (c *Client) AddInlinedAllOf(ctx context.Context, body AddInlinedAllOfReques
 }
 
 // AddInlinedBody
-func (c *Client) AddInlinedBody(ctx context.Context, body AddInlinedBodyRequest) (*FooBar, error) {
+func (c *ExampleClient) AddInlinedBody(ctx context.Context, body ExampleAddInlinedBodyRequest) (*ExampleFooBar, error) {
 	u := c.baseURL + "/examples/inlinedBody"
 
 	buf, err := json.Marshal(body)
@@ -612,7 +638,7 @@ func (c *Client) AddInlinedBody(ctx context.Context, body AddInlinedBodyRequest)
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out FooBar
+	var out ExampleFooBar
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -621,7 +647,7 @@ func (c *Client) AddInlinedBody(ctx context.Context, body AddInlinedBodyRequest)
 }
 
 // GetExampleParams
-func (c *Client) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, enumTest GetExampleParamsEnumTest) (*Example, error) {
+func (c *ExampleClient) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, enumTest ExampleGetExampleParamsEnumTest) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/key1/{k1}/key2/{k2}/key3/{k3}/key4/{key4}/key5/{key5}"
 	queryParams := url.Values{}
 	u = strings.Replace(u, "{k1}", url.PathEscape(k1), 1)
@@ -654,7 +680,7 @@ func (c *Client) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, 
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -663,7 +689,7 @@ func (c *Client) GetExampleParams(ctx context.Context, k1 string, k2 uuid.UUID, 
 }
 
 // NoResponse
-func (c *Client) NoResponse(ctx context.Context, body Foo) error {
+func (c *ExampleClient) NoResponse(ctx context.Context, body ExampleFoo) error {
 	u := c.baseURL + "/examples/noResponse"
 
 	buf, err := json.Marshal(body)
@@ -699,7 +725,7 @@ func (c *Client) NoResponse(ctx context.Context, body Foo) error {
 }
 
 // GetExampleOptional
-func (c *Client) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UUID, k3 *time.Time, k4 *int32, k5 *int64, k5Default int64) (*Example, error) {
+func (c *ExampleClient) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UUID, k3 *time.Time, k4 *int32, k5 *int64, k5Default int64) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/optional"
 	queryParams := url.Values{}
 	if k1 != nil {
@@ -742,7 +768,7 @@ func (c *Client) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UU
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -751,7 +777,7 @@ func (c *Client) GetExampleOptional(ctx context.Context, k1 *string, k2 *uuid.UU
 }
 
 // GetExampleQuery
-func (c *Client) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, k6 []string, k7 []uuid.UUID) (*Example, error) {
+func (c *ExampleClient) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k3 time.Time, k4 int32, k5 int64, k6 []string, k7 []uuid.UUID) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/query"
 	queryParams := url.Values{}
 	queryParams.Set("k1", k1)
@@ -789,7 +815,7 @@ func (c *Client) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -798,7 +824,7 @@ func (c *Client) GetExampleQuery(ctx context.Context, k1 string, k2 uuid.UUID, k
 }
 
 // GetRawBody
-func (c *Client) GetRawBody(ctx context.Context, body Foo) (*Example, error) {
+func (c *ExampleClient) GetRawBody(ctx context.Context, body ExampleFoo) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/rawBody"
 
 	buf, err := json.Marshal(body)
@@ -830,7 +856,7 @@ func (c *Client) GetRawBody(ctx context.Context, body Foo) (*Example, error) {
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -839,7 +865,7 @@ func (c *Client) GetRawBody(ctx context.Context, body Foo) (*Example, error) {
 }
 
 // GetRawRequest
-func (c *Client) GetRawRequest(ctx context.Context, vehicle GetRawRequestVehicle) (*Example, error) {
+func (c *ExampleClient) GetRawRequest(ctx context.Context, vehicle ExampleGetRawRequestVehicle) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/rawRequest"
 	queryParams := url.Values{}
 	queryParams.Set("vehicle", vehicle.String())
@@ -867,7 +893,7 @@ func (c *Client) GetRawRequest(ctx context.Context, vehicle GetRawRequestVehicle
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -876,7 +902,7 @@ func (c *Client) GetRawRequest(ctx context.Context, vehicle GetRawRequestVehicle
 }
 
 // GetRawRequestResponse
-func (c *Client) GetRawRequestResponse(ctx context.Context, vehicle GetRawRequestResponseVehicle) (*Example, error) {
+func (c *ExampleClient) GetRawRequestResponse(ctx context.Context, vehicle ExampleGetRawRequestResponseVehicle) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/rawRequestResponse"
 	queryParams := url.Values{}
 	queryParams.Set("vehicle", vehicle.String())
@@ -904,7 +930,7 @@ func (c *Client) GetRawRequestResponse(ctx context.Context, vehicle GetRawReques
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -913,7 +939,7 @@ func (c *Client) GetRawRequestResponse(ctx context.Context, vehicle GetRawReques
 }
 
 // GetRawRequestResponseAndHeaders
-func (c *Client) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle GetRawRequestResponseAndHeadersVehicle) (*Example, error) {
+func (c *ExampleClient) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle ExampleGetRawRequestResponseAndHeadersVehicle) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/rawRequestResponseAndHeaders"
 	queryParams := url.Values{}
 	queryParams.Set("vehicle", vehicle.String())
@@ -941,7 +967,7 @@ func (c *Client) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle Ge
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -950,7 +976,7 @@ func (c *Client) GetRawRequestResponseAndHeaders(ctx context.Context, vehicle Ge
 }
 
 // GetRawResponse
-func (c *Client) GetRawResponse(ctx context.Context, vehicle GetRawResponseVehicle) (*Example, error) {
+func (c *ExampleClient) GetRawResponse(ctx context.Context, vehicle ExampleGetRawResponseVehicle) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/rawResponse"
 	queryParams := url.Values{}
 	queryParams.Set("vehicle", vehicle.String())
@@ -978,7 +1004,7 @@ func (c *Client) GetRawResponse(ctx context.Context, vehicle GetRawResponseVehic
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
@@ -987,7 +1013,7 @@ func (c *Client) GetRawResponse(ctx context.Context, vehicle GetRawResponseVehic
 }
 
 // GetTest
-func (c *Client) GetTest(ctx context.Context, vehicle GetTestVehicle, vehicleDefault GetTestVehicleDefault, playerID uuid.UUID, color ColorQuery, colorDefault ColorQueryDefault, season Season) (*Example, error) {
+func (c *ExampleClient) GetTest(ctx context.Context, vehicle ExampleGetTestVehicle, vehicleDefault ExampleGetTestVehicleDefault, playerID uuid.UUID, color ExampleColorQuery, colorDefault ExampleColorQueryDefault, season ExampleSeason) (*ExampleExample, error) {
 	u := c.baseURL + "/examples/test"
 	queryParams := url.Values{}
 	queryParams.Set("vehicle", vehicle.String())
@@ -1020,7 +1046,7 @@ func (c *Client) GetTest(ctx context.Context, vehicle GetTestVehicle, vehicleDef
 		return nil, httputil.UnexpectedResponseError{Resp: resp, URL: u, Body: errBody}
 	}
 
-	var out Example
+	var out ExampleExample
 	if err := httputil.GetJSONBody(resp.Body, &out); err != nil {
 		return nil, err
 	}
