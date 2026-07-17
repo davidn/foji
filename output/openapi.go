@@ -165,7 +165,7 @@ func (o *OpenAPIFileContext) GetType(currentPackage, name string, s *openapi3.Sc
 		return ""
 	}
 
-	if override, ok := s.Value.Extensions["x-go-type"]; ok {
+	if override, ok := s.Value.Extensions["x-go-type"]; ok && !o.Params.GetBool("IgnoreGoType") {
 		return o.getXGoType(currentPackage, override)
 	}
 
